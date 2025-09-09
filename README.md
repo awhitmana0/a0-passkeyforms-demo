@@ -111,16 +111,140 @@ The code for the form's custom component will handle the WebAuthn API calls and 
 
 ## Postman Collection for Testing
 
-This collection will help you test the My Account API calls directly.
+This collection includes requests for both **Custom Token Exchange setup/testing** and **My Account API testing** for the complete passkey enrollment flow.
 
 > **Resource**: The full Postman collection is provided in a separate file named `postman_collection.json`.
 
-### Request 1: Initiate Passkey Enrollment
+### Custom Token Exchange Requests
+
+These requests are essential for configuring and testing the Custom Token Exchange flow that enables secure token acquisition in Auth0 Forms.
+
+#### Setup & Configuration
+
+**1. Get Management API Token**
+- **Method**: `POST`
+- **URL**: `https://{{YOUR_AUTH0_DOMAIN}}/oauth/token`
+- **Headers**: `Content-Type: application/x-www-form-urlencoded`
+- **Body**:
+  ```
+  grant_type=client_credentials
+  client_id={{MANAGEMENT_API_CLIENT_ID}}
+  client_secret={{MANAGEMENT_API_CLIENT_SECRET}}
+  audience=https://{{YOUR_AUTH0_DOMAIN}}/api/v2/
+  ```
+
+**2. Enable Custom Token Exchange on Application**
+- **Method**: `PATCH`
+- **URL**: `https://{{YOUR_AUTH0_DOMAIN}}/api/v2/clients/{{CLIENT_ID}}`
+- **Headers**: 
+  - `Content-Type: application/json`
+  - `Authorization: Bearer {{MANAGEMENT_API_TOKEN}}`
+- **Body**:
+  ```json
+  {
+    "token_exchange": {
+      "allow_any_profile_of_type": ["custom_authentication"]
+    }
+  }
+  ```
+
+**3. Get Action ID**
+- **Method**: `GET`
+- **URL**: `https://{{YOUR_AUTH0_DOMAIN}}/api/v2/actions/actions?actionName={{ACTION_NAME}}`
+- **Headers**: `Authorization: Bearer {{MANAGEMENT_API_TOKEN}}`
+
+**4. Create Custom Token Exchange Profile**
+- **Method**: `POST`
+- **URL**: `https://{{YOUR_AUTH0_DOMAIN}}/api/v2/token-exchange-profiles`
+- **Headers**:
+  - `Content-Type: application/json`
+  - `Authorization: Bearer {{MANAGEMENT_API_TOKEN}}`
+- **Body**:
+  ```json
+  {
+    "name": "passkey-form-token-exchange",
+    "subject_token_type": "urn:auth0:form:token-exchange",
+    "action_id": "{{ACTION_ID}}",
+    "type": "custom_authentication"
+  }
+  ```
+
+#### Profile Management
+
+**5. Get All Token Exchange Profiles**
+- **Method**: `GET`
+- **URL**: `https://{{YOUR_AUTH0_DOMAIN}}/api/v2/token-exchange-profiles`
+- **Headers**: `Authorization: Bearer {{MANAGEMENT_API_TOKEN}}`
+
+**6. Update Token Exchange Profile**
+- **Method**: `PATCH`
+- **URL**: `https://{{YOUR_AUTH0_DOMAIN}}/api/v2/token-exchange-profiles/{{PROFILE_ID}}`
+- **Headers**:
+  - `Content-Type: application/json`
+  - `Authorization: Bearer {{MANAGEMENT_API_TOKEN}}`
+- **Body**:
+  ```json
+  {
+    "name": "updated-profile-name",
+    "subject_token_type": "urn:auth0:form:updated-token-exchange"
+  }
+  ```
+
+**7. Delete Token Exchange Profile**
+- **Method**: `DELETE`
+- **URL**: `https://{{YOUR_AUTH0_DOMAIN}}/api/v2/token-exchange-profiles/{{PROFILE_ID}}`
+- **Headers**: `Authorization: Bearer {{MANAGEMENT_API_TOKEN}}`
+
+#### Testing Token Exchange
+
+**8. Custom Token Exchange Request**
+- **Method**: `POST`
+- **URL**: `https://{{YOUR_AUTH0_DOMAIN}}/oauth/token`
+- **Headers**: `Content-Type: application/x-www-form-urlencoded`
+- **Body**:
+  ```
+  grant_type=urn:ietf:params:oauth:grant-type:token-exchange
+  audience={{API_IDENTIFIER}}
+  scope=openid create:me:authentication_methods
+  subject_token_type=urn:auth0:form:token-exchange
+  subject_token={{SUBJECT_TOKEN}}
+  client_id={{CLIENT_ID}}
+  client_secret={{CLIENT_SECRET}}
+  ```
+
+**9. Attack Protection - Get Settings**
+- **Method**: `GET`
+- **URL**: `https://{{YOUR_AUTH0_DOMAIN}}/api/v2/attack-protection/suspicious-ip-throttling`
+- **Headers**: `Authorization: Bearer {{MANAGEMENT_API_TOKEN}}`
+
+**10. Attack Protection - Update Settings**
+- **Method**: `PATCH`
+- **URL**: `https://{{YOUR_AUTH0_DOMAIN}}/api/v2/attack-protection/suspicious-ip-throttling`
+- **Headers**:
+  - `Content-Type: application/json`
+  - `Authorization: Bearer {{MANAGEMENT_API_TOKEN}}`
+- **Body**:
+  ```json
+  {
+    "stage": {
+      "pre-custom-token-exchange": {
+        "max_attempts": 10,
+        "rate": 600000
+      }
+    }
+  }
+  ```
+
+### My Account API Requests
+
+These requests test the actual passkey enrollment functionality using tokens obtained from Custom Token Exchange.
+
+**11. Initiate Passkey Enrollment**
 
 Simulate the custom component's call to get the WebAuthn challenge.
 
 - **Method**: `POST`
-- **URL**: `https://YOUR_AUTH0_DOMAIN/api/v2/me/v1/authentication-methods`
+- **URL**: `https://{{YOUR_AUTH0_DOMAIN}}/api/v2/me/v1/authentication-methods`
 - **Headers**:
   - `Content-Type: application/json`
   - `Authorization: Bearer {{access_token}}`
@@ -128,18 +252,18 @@ Simulate the custom component's call to get the WebAuthn challenge.
   ```json
   {
     "type": "passkey",
-    "connection": "YOUR_DATABASE_CONNECTION_NAME"
+    "connection": "{{DATABASE_CONNECTION_NAME}}"
   }
   ```
 
 > **Note**: The `access_token` must have the `create:me:authentication_methods` scope.
 
-### Request 2: Verify Passkey Enrollment
+**12. Verify Passkey Enrollment**
 
 Simulate the custom component's call to verify the passkey. You must get the attestationObject from a real WebAuthn ceremony first.
 
 - **Method**: `POST`
-- **URL**: `https://YOUR_AUTH0_DOMAIN/api/v2/me/v1/authentication-methods/passkey|new/verify`
+- **URL**: `https://{{YOUR_AUTH0_DOMAIN}}/api/v2/me/v1/authentication-methods/passkey|new/verify`
 - **Headers**:
   - `Content-Type: application/json`
   - `Authorization: Bearer {{access_token}}`
@@ -153,6 +277,20 @@ Simulate the custom component's call to verify the passkey. You must get the att
     "type": "public-key"
   }
   ```
+
+### Environment Variables
+
+The collection requires these environment variables:
+
+- `YOUR_AUTH0_DOMAIN` - Your Auth0 tenant domain
+- `MANAGEMENT_API_CLIENT_ID` - Management API application client ID  
+- `MANAGEMENT_API_CLIENT_SECRET` - Management API application client secret
+- `CLIENT_ID` - Application client ID for token exchange
+- `CLIENT_SECRET` - Application client secret for token exchange
+- `API_IDENTIFIER` - Your API identifier/audience
+- `DATABASE_CONNECTION_NAME` - Database connection name with passkeys enabled
+- `ACTION_ID` - Custom Token Exchange Action ID
+- `PROFILE_ID` - Token Exchange Profile ID (after creation)
 
 ## Sequence Diagram
 

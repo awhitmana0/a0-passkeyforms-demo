@@ -1,0 +1,592 @@
+{
+  "info": {
+    "_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "name": "Custom Passkey Enrollment with Auth0 Forms",
+    "description": "Complete collection for setting up and testing Custom Token Exchange with Auth0 Forms for passkey enrollment. This collection covers configuration, testing, and My Account API interactions.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "custom-passkey-demo"
+  },
+  "variable": [
+    {
+      "key": "auth0_domain",
+      "value": "your-tenant.auth0.com",
+      "type": "string",
+      "description": "Your Auth0 tenant domain"
+    },
+    {
+      "key": "management_api_client_id",
+      "value": "",
+      "type": "string",
+      "description": "Management API application client ID"
+    },
+    {
+      "key": "management_api_client_secret",
+      "value": "",
+      "type": "string",
+      "description": "Management API application client secret"
+    },
+    {
+      "key": "client_id",
+      "value": "",
+      "type": "string",
+      "description": "Application client ID for token exchange"
+    },
+    {
+      "key": "client_secret",
+      "value": "",
+      "type": "string",
+      "description": "Application client secret for token exchange"
+    },
+    {
+      "key": "api_identifier",
+      "value": "https://{{auth0_domain}}/me/",
+      "type": "string",
+      "description": "API identifier/audience (typically My Account API)"
+    },
+    {
+      "key": "database_connection_name",
+      "value": "",
+      "type": "string",
+      "description": "Database connection name with passkeys enabled"
+    },
+    {
+      "key": "action_name",
+      "value": "",
+      "type": "string",
+      "description": "Custom Token Exchange Action name"
+    },
+    {
+      "key": "management_api_token",
+      "value": "",
+      "type": "string",
+      "description": "Management API access token (obtained from first request)"
+    },
+    {
+      "key": "action_id",
+      "value": "",
+      "type": "string",
+      "description": "Custom Token Exchange Action ID (obtained from API)"
+    },
+    {
+      "key": "profile_id",
+      "value": "",
+      "type": "string",
+      "description": "Token Exchange Profile ID (after creation)"
+    },
+    {
+      "key": "access_token",
+      "value": "",
+      "type": "string",
+      "description": "Access token for My Account API calls"
+    },
+    {
+      "key": "subject_token",
+      "value": "",
+      "type": "string",
+      "description": "Subject token for Custom Token Exchange testing"
+    }
+  ],
+  "item": [
+    {
+      "name": "Setup & Configuration",
+      "item": [
+        {
+          "name": "1. Get Management API Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "client_credentials",
+                  "type": "text"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{management_api_client_id}}",
+                  "type": "text"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "{{management_api_client_secret}}",
+                  "type": "text"
+                },
+                {
+                  "key": "audience",
+                  "value": "https://{{auth0_domain}}/api/v2/",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "https://{{auth0_domain}}/oauth/token",
+              "protocol": "https",
+              "host": [
+                "{{auth0_domain}}"
+              ],
+              "path": [
+                "oauth",
+                "token"
+              ]
+            },
+            "description": "Get Management API token for configuration requests. Copy the access_token from response to management_api_token variable."
+          },
+          "response": []
+        },
+        {
+          "name": "2. Enable Custom Token Exchange on Application",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{management_api_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token_exchange\": {\n    \"allow_any_profile_of_type\": [\"custom_authentication\"]\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://{{auth0_domain}}/api/v2/clients/{{client_id}}",
+              "protocol": "https",
+              "host": [
+                "{{auth0_domain}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "clients",
+                "{{client_id}}"
+              ]
+            },
+            "description": "Enable Custom Token Exchange on your application. This allows the app to use token exchange profiles."
+          },
+          "response": []
+        },
+        {
+          "name": "3. Get Action ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{management_api_token}}"
+              }
+            ],
+            "url": {
+              "raw": "https://{{auth0_domain}}/api/v2/actions/actions?actionName={{action_name}}",
+              "protocol": "https",
+              "host": [
+                "{{auth0_domain}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "actions",
+                "actions"
+              ],
+              "query": [
+                {
+                  "key": "actionName",
+                  "value": "{{action_name}}"
+                }
+              ]
+            },
+            "description": "Get the Action ID for your Custom Token Exchange Action. Copy the id from actions[0].id in response to action_id variable."
+          },
+          "response": []
+        },
+        {
+          "name": "4. Create Custom Token Exchange Profile",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{management_api_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"passkey-form-token-exchange\",\n  \"subject_token_type\": \"urn:auth0:form:token-exchange\",\n  \"action_id\": \"{{action_id}}\",\n  \"type\": \"custom_authentication\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://{{auth0_domain}}/api/v2/token-exchange-profiles",
+              "protocol": "https",
+              "host": [
+                "{{auth0_domain}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "token-exchange-profiles"
+              ]
+            },
+            "description": "Create a Custom Token Exchange Profile that maps to your Action. Copy the id from response to profile_id variable."
+          },
+          "response": []
+        }
+      ],
+      "description": "Essential setup requests to configure Custom Token Exchange for Auth0 Forms"
+    },
+    {
+      "name": "Profile Management",
+      "item": [
+        {
+          "name": "5. Get All Token Exchange Profiles",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{management_api_token}}"
+              }
+            ],
+            "url": {
+              "raw": "https://{{auth0_domain}}/api/v2/token-exchange-profiles",
+              "protocol": "https",
+              "host": [
+                "{{auth0_domain}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "token-exchange-profiles"
+              ]
+            },
+            "description": "List all Custom Token Exchange Profiles in your tenant. Supports checkpoint pagination."
+          },
+          "response": []
+        },
+        {
+          "name": "6. Update Token Exchange Profile",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{management_api_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"updated-passkey-form-token-exchange\",\n  \"subject_token_type\": \"urn:auth0:form:updated-token-exchange\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://{{auth0_domain}}/api/v2/token-exchange-profiles/{{profile_id}}",
+              "protocol": "https",
+              "host": [
+                "{{auth0_domain}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "token-exchange-profiles",
+                "{{profile_id}}"
+              ]
+            },
+            "description": "Update name or subject_token_type of a Custom Token Exchange Profile. Action ID cannot be modified."
+          },
+          "response": []
+        },
+        {
+          "name": "7. Delete Token Exchange Profile",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{management_api_token}}"
+              }
+            ],
+            "url": {
+              "raw": "https://{{auth0_domain}}/api/v2/token-exchange-profiles/{{profile_id}}",
+              "protocol": "https",
+              "host": [
+                "{{auth0_domain}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "token-exchange-profiles",
+                "{{profile_id}}"
+              ]
+            },
+            "description": "Delete a Custom Token Exchange Profile. Use with caution as this cannot be undone."
+          },
+          "response": []
+        }
+      ],
+      "description": "CRUD operations for managing Custom Token Exchange Profiles"
+    },
+    {
+      "name": "Testing Token Exchange",
+      "item": [
+        {
+          "name": "8. Custom Token Exchange Request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "urn:ietf:params:oauth:grant-type:token-exchange",
+                  "type": "text"
+                },
+                {
+                  "key": "audience",
+                  "value": "{{api_identifier}}",
+                  "type": "text"
+                },
+                {
+                  "key": "scope",
+                  "value": "openid create:me:authentication_methods",
+                  "type": "text"
+                },
+                {
+                  "key": "subject_token_type",
+                  "value": "urn:auth0:form:token-exchange",
+                  "type": "text"
+                },
+                {
+                  "key": "subject_token",
+                  "value": "{{subject_token}}",
+                  "type": "text"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{client_id}}",
+                  "type": "text"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "{{client_secret}}",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "https://{{auth0_domain}}/oauth/token",
+              "protocol": "https",
+              "host": [
+                "{{auth0_domain}}"
+              ],
+              "path": [
+                "oauth",
+                "token"
+              ]
+            },
+            "description": "Perform Custom Token Exchange. Copy the access_token from response to access_token variable for My Account API calls."
+          },
+          "response": []
+        }
+      ],
+      "description": "Test the Custom Token Exchange flow that Auth0 Forms will use"
+    },
+    {
+      "name": "Attack Protection",
+      "item": [
+        {
+          "name": "9. Get Suspicious IP Throttling Settings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{management_api_token}}"
+              }
+            ],
+            "url": {
+              "raw": "https://{{auth0_domain}}/api/v2/attack-protection/suspicious-ip-throttling",
+              "protocol": "https",
+              "host": [
+                "{{auth0_domain}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "attack-protection",
+                "suspicious-ip-throttling"
+              ]
+            },
+            "description": "Get current Suspicious IP Throttling settings including Custom Token Exchange configuration."
+          },
+          "response": []
+        },
+        {
+          "name": "10. Update Suspicious IP Throttling Settings",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{management_api_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stage\": {\n    \"pre-custom-token-exchange\": {\n      \"max_attempts\": 10,\n      \"rate\": 600000\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://{{auth0_domain}}/api/v2/attack-protection/suspicious-ip-throttling",
+              "protocol": "https",
+              "host": [
+                "{{auth0_domain}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "attack-protection",
+                "suspicious-ip-throttling"
+              ]
+            },
+            "description": "Configure Suspicious IP Throttling for Custom Token Exchange. Rate is interval in milliseconds (600000 = 10 minutes)."
+          },
+          "response": []
+        }
+      ],
+      "description": "Configure attack protection settings for Custom Token Exchange"
+    },
+    {
+      "name": "My Account API",
+      "item": [
+        {
+          "name": "11. Initiate Passkey Enrollment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"passkey\",\n  \"connection\": \"{{database_connection_name}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://{{auth0_domain}}/api/v2/me/v1/authentication-methods",
+              "protocol": "https",
+              "host": [
+                "{{auth0_domain}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "me",
+                "v1",
+                "authentication-methods"
+              ]
+            },
+            "description": "Start passkey enrollment process. Returns WebAuthn challenge and options. The access_token must have create:me:authentication_methods scope."
+          },
+          "response": []
+        },
+        {
+          "name": "12. Verify Passkey Enrollment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"attestationObject\": \"BASE64_URL_ENCODED_ATTESTATION_OBJECT\",\n  \"clientDataJSON\": \"BASE64_URL_ENCODED_CLIENT_DATA\",\n  \"id\": \"BASE64_URL_ENCODED_CREDENTIAL_ID\",\n  \"rawId\": \"BASE64_URL_ENCODED_RAW_ID\",\n  \"type\": \"public-key\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://{{auth0_domain}}/api/v2/me/v1/authentication-methods/passkey|new/verify",
+              "protocol": "https",
+              "host": [
+                "{{auth0_domain}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "me",
+                "v1",
+                "authentication-methods",
+                "passkey|new",
+                "verify"
+              ]
+            },
+            "description": "Complete passkey enrollment by verifying the WebAuthn attestation. Replace the BASE64_URL_ENCODED values with actual data from WebAuthn ceremony."
+          },
+          "response": []
+        }
+      ],
+      "description": "Test passkey enrollment using tokens obtained from Custom Token Exchange"
+    }
+  ]
+}
