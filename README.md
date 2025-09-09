@@ -2,6 +2,12 @@
 
 This document provides a comprehensive, step-by-step walkthrough for implementing a custom passkey enrollment flow using Auth0 Forms, Auth0 Actions, and the Auth0 My Account API. This solution is necessary when you need to trigger passkey enrollment at a specific point in the user's lifecycle, rather than during initial signup. A common use case is giving an authenticated user the option to add additional passkeys to their account.
 
+## Demo
+
+![Passkey Enrollment Flow](Example/passkey-walkthrough-fast.gif)
+
+*The complete passkey enrollment flow showing Custom Token Exchange in Auth0 Forms*
+
 ## Overview
 
 The standard Auth0 passkey enrollment is designed to trigger in certain ways, such as during the initial sign-up. This solution gives you complete control over when and where the enrollment occurs.
@@ -53,7 +59,7 @@ Follow these steps in order to properly set up the Custom Token Exchange flow:
 > **Important**: The token exchange endpoint must be called using your custom domain: `https://your-custom-domain.com/oauth/token`
 
 ### Step 3: Auth0 Forms Integration
-1. **Import Form Configuration**: Use the provided `cte_ul_npk.json` to create your Auth0 Form
+1. **Import Form Configuration**: Use the provided `Auth0 Forms/passkey_enroll_basic.json` to create your Auth0 Form
 2. **Update Form Token Exchange**: Ensure the form's Custom Token Exchange flow points to your custom domain
 3. **Deploy Action**: Make sure your Custom Token Exchange Action is deployed and active
 4. **Test End-to-End Flow**:
@@ -123,7 +129,7 @@ The form uses these dynamic parameters:
 
 1. Go to **Branding > Forms > Library**
 2. Select **Create Form** and choose **"Blank Form"**
-3. Import the provided JSON configuration from `cte_ul_npk.json`
+3. Import the provided JSON configuration from `Auth0 Forms/passkey_enroll_basic.json`
 4. **Critical**: Update the following values in the form configuration:
    - Replace `CUSTOM_DOMAIN` with your actual custom domain
    - Replace `TOKEN_EXCHANGE_CLIENT_ID` with your application's client ID
@@ -409,6 +415,6 @@ sequenceDiagram
 
 ## Files in This Repository
 
-- `cte_ul_npk.json` - Full JSON export for the Auth0 Form implementation
+- `Auth0 Forms/passkey_enroll_basic.json` - Full JSON export for the Auth0 Form implementation
 - `form_component.js` - Complete custom component code for the Auth0 Form
 - `postman_collection.json` - Postman collection for testing the My Account API endpoints
