@@ -225,7 +225,6 @@ The `PasskeyRegistrationField` function implements a complete custom field compo
 #### Configuration & Testing Options
 ```javascript
 // Testing configuration for development vs production
-const ALLOW_DUPLICATE_PASSKEYS = false;  // Prevent duplicate passkeys in production
 const ALLOW_AUTO_PROCEED = true;         // Auto-proceed after successful registration
 ```
 
@@ -258,7 +257,6 @@ const challengeResponse = await fetch(`https://${auth0Domain}/me/v1/authenticati
 **Step 2: WebAuthn Options Preparation**
 - Converts base64url challenge data to ArrayBuffers
 - Configures authenticator selection criteria
-- Sets up exclude credentials for duplicate prevention
 - Prepares complete `publicKeyCredentialCreationOptions`
 
 **Step 3: Browser WebAuthn API Call**
@@ -287,7 +285,6 @@ const verifyResponse = await fetch(`https://${auth0Domain}/me/v1/authentication-
 - Special handling for `NotAllowedError` (user cancellation)
 
 **Security Features**
-- Optional duplicate passkey prevention using `excludeCredentials`
 - Secure token handling and validation
 - ID token parsing and user context management
 
@@ -310,7 +307,7 @@ const verifyResponse = await fetch(`https://${auth0Domain}/me/v1/authentication-
 4. **User Experience**: Progressive UI with clear feedback and error handling
 5. **Integration**: Seamlessly integrates with Auth0 Forms and Actions
 
-> **Implementation**: The complete source code is embedded in the form configuration at `Auth0 Forms/passkey_enroll_basic.json`.
+> **Implementation**: The complete source code is available in `Auth0 Forms/passkey_registration_component.js` and is also embedded in the form configuration at `Auth0 Forms/passkey_enroll_basic.json`.
 
 ## Postman Collection for Testing
 
@@ -533,5 +530,5 @@ sequenceDiagram
 ## Files in This Repository
 
 - `Auth0 Forms/passkey_enroll_basic.json` - Full JSON export for the Auth0 Form implementation
-- `form_component.js` - Complete custom component code for the Auth0 Form
-- `postman_collection.json` - Postman collection for testing the My Account API endpoints
+- `Auth0 Forms/passkey_registration_component.js` - Complete custom component source code
+- `Postman/passkey-forms-demo-collection.json` - Postman collection for Custom Token Exchange setup and testing
