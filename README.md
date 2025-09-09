@@ -30,6 +30,44 @@ Before implementing this solution, ensure you have:
 - **Application**: A custom application to host the authentication flow (e.g., a Single-Page Application)
 - **API Access**: Your application must be able to securely obtain an access token with the necessary scope for the My Account API
 
+## Implementation Steps Overview
+
+Follow these steps in order to properly set up the Custom Token Exchange flow:
+
+### Step 1: Custom Domain Setup
+1. **Configure Custom Domain**: Ensure your Auth0 tenant has a custom domain configured and verified
+2. **Update Application URLs**: All callback URLs, logout URLs, and origins must use your custom domain
+3. **Test Login Flow**: Verify that users can successfully log in via your custom domain
+
+> **Critical**: All subsequent API calls must use your custom domain, not the tenant URL (e.g., `https://your-domain.com/oauth/token` not `https://tenant.auth0.com/oauth/token`)
+
+### Step 2: Custom Token Exchange Configuration & Testing
+1. **Run Postman Collection**: Use the provided Postman collection to configure Custom Token Exchange
+2. **Update Postman Variables**: Set `auth0_domain` to your **custom domain** (not tenant URL)
+3. **Test Token Exchange Flow**: 
+   - Complete all setup requests (1-4)
+   - Execute the token exchange test (request 8)
+   - Verify you receive a valid access token with the required scopes
+4. **Validate Token**: Confirm the returned token has `create:me:authentication_methods` scope
+
+> **Important**: The token exchange endpoint must be called using your custom domain: `https://your-custom-domain.com/oauth/token`
+
+### Step 3: Auth0 Forms Integration
+1. **Import Form Configuration**: Use the provided `cte_ul_npk.json` to create your Auth0 Form
+2. **Update Form Token Exchange**: Ensure the form's Custom Token Exchange flow points to your custom domain
+3. **Deploy Action**: Make sure your Custom Token Exchange Action is deployed and active
+4. **Test End-to-End Flow**:
+   - Trigger the form via your Post-Login Action
+   - Monitor Action executions in the Auth0 Dashboard
+   - Verify Custom Token Exchange completes successfully
+   - Confirm the form receives the access token
+
+### Step 4: Validation & Monitoring
+1. **Monitor Executions**: Check Auth0 Dashboard > Actions > Executions for successful token exchanges
+2. **Review Logs**: Look for `secte` (successful) or `fecte` (failed) log entries
+3. **Test Form Functionality**: Verify the custom component can successfully call the My Account API
+4. **End-to-End Testing**: Complete a full passkey enrollment flow
+
 ## Auth0 Dashboard Configuration
 
 Before writing any code, we need to set up our Auth0 tenant.
