@@ -14,7 +14,7 @@ Our custom flow follows these steps:
 2. **Action Trigger**: An Auth0 post-login Action runs, checks a condition (e.g., if the user has enrolled a passkey yet), and triggers a custom Auth0 Form
 3. **Token Exchange**: The form uses Custom Token Exchange to get a privileged access token for the My Account API (most secure method as the client secret remains server-side)
 4. **Enrollment Initiation**: The form's custom component initiates the passkey enrollment process
-5. **WebAuthn Challenge**: The custom component calls the My Account API to get a WebAuthn challenge
+5. **Passkey Challenge**: The custom component calls the My Account API to get a passkey challenge
 6. **Passkey Creation**: The browser uses the WebAuthn API (`navigator.credentials.create`) to prompt the user to create a passkey
 7. **Attestation**: The browser sends the WebAuthn attestationObject back to the custom component
 8. **Verification**: The component verifies this attestationObject with the Auth0 My Account API, completing the enrollment
@@ -72,24 +72,66 @@ Follow these steps in order to properly set up the Custom Token Exchange flow:
 
 Before writing any code, we need to set up our Auth0 tenant.
 
-### Create a WebAuthn Connection
+### Enable Passkeys for Connection
 
 This is the connection where Auth0 will store the passkey credentials.
 
 1. In the Auth0 Dashboard, go to **Authentication > Database**
 2. Select a database connection (or create a new one)
 3. Go to the **Authentication Methods** tab and enable the **Passkeys** toggle
-4. Go to **Settings** and ensure **Requires Username** is disabled
 
 ### Create a Custom Auth0 Form
 
-This form will contain the custom component that handles the passkey enrollment.
+This form implements the complete Custom Token Exchange and passkey enrollment flow. The provided form includes both the token exchange logic and the user interface.
+
+#### Form Architecture
+
+The form consists of two main components:
+
+**1. Custom Token Exchange Flow (`cte_flow`)**
+- Executes an HTTP request to your custom domain's `/oauth/token` endpoint
+- Uses the `urn:ietf:params:oauth:grant-type:token-exchange` grant type
+- Exchanges the user's ID (`{{context.user.user_id}}`) for a My Account API access token
+- Stores the resulting access token in a shared variable (`my_account_access_token`)
+
+**2. Passkey Enrollment Step (`step_tc2E`)**
+- Displays Auth0 branding and user-friendly messaging
+- Contains a sophisticated custom component that handles the complete passkey flow
+- Uses the access token from the previous step to call the My Account API
+
+#### Custom Component Features
+
+The JavaScript component provides:
+
+- **WebAuthn Integration**: Handles `navigator.credentials.create()` for passkey generation
+- **My Account API Communication**: Initiates passkey challenges and verifies attestations
+- **User Experience**: Progressive UI with status messages and button states
+- **Error Handling**: Comprehensive error management with user-friendly messages
+- **Security Features**: Optional duplicate passkey prevention and auto-proceed functionality
+- **Responsive Design**: Modern CSS with animations and Auth0 design system integration
+
+#### Configuration Parameters
+
+The form uses these dynamic parameters:
+- `email`: User's email from `{{context.user.email}}`
+- `clientId`: Your application's client ID
+- `auth0Domain`: Your custom domain (critical for proper token exchange)
+- `myAccountAt`: Access token from the CTE flow (`{{vars.my_account_access_token}}`)
+- `connectionName`: Database connection with passkeys enabled
+
+#### Setup Instructions
 
 1. Go to **Branding > Forms > Library**
-2. Select **Create Form** and choose an appropriate form type (e.g., "Blank Form")
-3. In the form editor, add a **Custom Component** node
+2. Select **Create Form** and choose **"Blank Form"**
+3. Import the provided JSON configuration from `cte_ul_npk.json`
+4. **Critical**: Update the following values in the form configuration:
+   - Replace `CUSTOM_DOMAIN` with your actual custom domain
+   - Replace `TOKEN_EXCHANGE_CLIENT_ID` with your application's client ID
+   - Replace `TOKEN_EXCHANGE_CLIENT_SECRET` with your application's client secret
+   - Update `connectionName` in the component params
+5. Deploy the form and note its Form ID for use in your Post-Login Action
 
-> **Note**: The full JSON export for a form that implements this flow is available in the file `cte_ul_npk.json`.
+> **Important**: The form's CTE flow **must** use your custom domain endpoint, not the tenant URL, for the token exchange to work properly.
 
 ### Configure the Application with My Account API Scopes
 

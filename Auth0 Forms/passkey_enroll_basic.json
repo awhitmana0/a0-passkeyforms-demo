@@ -1,0 +1,133 @@
+{
+  "version": "4.0.0",
+  "form": {
+    "name": "Passkey Enroll - Basic",
+    "languages": {
+      "primary": "en"
+    },
+    "nodes": [
+      {
+        "id": "cte_flow",
+        "type": "FLOW",
+        "coordinates": {
+          "x": -1115,
+          "y": -105
+        },
+        "alias": "CTE Flow",
+        "config": {
+          "flow_id": "#FLOW-1#",
+          "next_node": "step_tc2E"
+        }
+      },
+      {
+        "id": "step_tc2E",
+        "type": "STEP",
+        "coordinates": {
+          "x": -636,
+          "y": -247
+        },
+        "alias": "New step",
+        "config": {
+          "components": [
+            {
+              "id": "image_ljSw",
+              "category": "BLOCK",
+              "type": "IMAGE",
+              "config": {
+                "src": "https://identicons.dev/identicons/mono/svg/icon-auth0-logo-dark.svg",
+                "position": "CENTER",
+                "height": 46
+              }
+            },
+            {
+              "id": "rich_text_hcue",
+              "category": "BLOCK",
+              "type": "RICH_TEXT",
+              "config": {
+                "content": "<p style=\"text-align:center;\"><strong>Sign in faster with a passkey</strong></p><p style=\"text-align:center;\"></p><p style=\"text-align:center;\">No need to remember your password, you can now sign in faster and more securely.</p>"
+              }
+            },
+            {
+              "id": "custom_Gdvo",
+              "category": "FIELD",
+              "type": "CUSTOM",
+              "required": false,
+              "sensitive": false,
+              "config": {
+                "schema": {},
+                "code": "function PasskeyRegistrationField(context) {\n    // --- Testing Configuration ---\n    // Set to 'true' to allow registering the same device multiple times for testing.\n    // Set to 'false' for production to prevent duplicate passkeys (recommended).\n    const ALLOW_DUPLICATE_PASSKEYS = false;\n    // Set to 'true' to automatically proceed after successful registration.\n    const ALLOW_AUTO_PROCEED = true;\n\n    // --- UI elements and configuration variables ---\n    let registerButton;\n    let messageDiv;\n    let continueButtonWrapper; // Wrapper for the continue button\n\n    // --- Auth0 settings (from Params) ---\n    let auth0Domain;\n    let email;\n    let myAccountAt;\n\n    let passkeyRegisteredSuccessfully = false;\n\n    // --- Helper functions ---\n    function arrayBufferToBase64Url(buffer) {\n        const bytes = new Uint8Array(buffer);\n        let str = '';\n        for (let i = 0; i < bytes.byteLength; i++) {\n            str += String.fromCharCode(bytes[i]);\n        }\n        return btoa(str)\n            .replace(/\\+/g, '-')\n            .replace(/\\//g, '_')\n            .replace(/=/g, '');\n    }\n\n    function base64UrlToArrayBuffer(base64url) {\n        let base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');\n        const pad = base64.length % 4;\n        if (pad) {\n            base64 += new Array(5 - pad).join('=');\n        }\n        const str = atob(base64);\n        const buffer = new ArrayBuffer(str.length);\n        let bytes = new Uint8Array(buffer);\n        for (let i = 0; i < str.length; i++) {\n            bytes[i] = str.charCodeAt(i);\n        }\n        return buffer;\n    }\n\n    function showMessage(text, isError = false) {\n        if (messageDiv) {\n            messageDiv.innerHTML = '';\n            const iconSpan = document.createElement('span');\n            iconSpan.className = 'message-icon';\n            if (isError) {\n                iconSpan.innerHTML = `<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 20 20\" fill=\"currentColor\"><path fill-rule=\"evenodd\" d=\"M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z\" clip-rule=\"evenodd\" /></svg>`;\n            } else {\n                iconSpan.innerHTML = `<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 20 20\" fill=\"currentColor\"><path fill-rule=\"evenodd\" d=\"M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z\" clip-rule=\"evenodd\" /></svg>`;\n            }\n            const textNode = document.createTextNode(text);\n            messageDiv.appendChild(iconSpan);\n            messageDiv.appendChild(textNode);\n            messageDiv.style.display = 'flex';\n            messageDiv.classList.remove('info', 'error');\n            messageDiv.classList.add(isError ? 'error' : 'info');\n        }\n    }\n\n    // --- Passkey registration process ---\n    async function handleRegisterPasskey() {\n        showMessage('Starting passkey registration process...', false);\n        if (registerButton) registerButton.disabled = true;\n\n        try {\n            const challengeResponse = await fetch(`https://${auth0Domain}/me/v1/authentication-methods`, {\n                method: 'POST',\n                headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${myAccountAt}`},\n                body: JSON.stringify({ type: 'passkey' }),\n            });\n\n            if (!challengeResponse.ok) {\n                const errorData = await challengeResponse.json();\n                throw new Error(`Failed to retrieve challenge: ${errorData.error_description || JSON.stringify(errorData)}`);\n            }\n\n            const challengeData = await challengeResponse.json();\n            const {authn_params_public_key, auth_session} = challengeData;\n\n            const publicKeyCredentialCreationOptions = {\n                challenge: base64UrlToArrayBuffer(authn_params_public_key.challenge),\n                rp: authn_params_public_key.rp,\n                user: {\n                    id: base64UrlToArrayBuffer(authn_params_public_key.user.id),\n                    name: authn_params_public_key.user.name,\n                    displayName: authn_params_public_key.user.displayName,\n                },\n                pubKeyCredParams: authn_params_public_key.pubKeyCredParams,\n                timeout: authn_params_public_key.timeout,\n                attestation: authn_params_public_key.attestation,\n                authenticatorSelection: {\n                    requireResidentKey: true,\n                    userVerification: 'preferred'\n                },\n                ...(!ALLOW_DUPLICATE_PASSKEYS && {\n                    excludeCredentials: authn_params_public_key.excludeCredentials ? authn_params_public_key.excludeCredentials.map(cred => ({\n                        id: base64UrlToArrayBuffer(cred.id),\n                        type: cred.type,\n                        transports: cred.transports\n                    })) : [],\n                }),\n                extensions: authn_params_public_key.extensions,\n            };\n\n            showMessage('Requesting passkey creation on your device...', false);\n\n            const credential = await navigator.credentials.create({ publicKey: publicKeyCredentialCreationOptions });\n\n            const authnResponse = {\n                id: arrayBufferToBase64Url(credential.rawId),\n                rawId: arrayBufferToBase64Url(credential.rawId),\n                type: credential.type,\n                authenticatorAttachment: credential.authenticatorAttachment,\n                response: {\n                    clientDataJSON: arrayBufferToBase64Url(credential.response.clientDataJSON),\n                    attestationObject: arrayBufferToBase64Url(credential.response.attestationObject),\n                },\n            };\n\n            const verifyResponse = await fetch(`https://${auth0Domain}/me/v1/authentication-methods/passkey|new/verify`, {\n                method: 'POST',\n                headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${myAccountAt}`},\n                body: JSON.stringify({ auth_session: auth_session, authn_response: authnResponse }),\n            });\n\n            if (!verifyResponse.ok) {\n                const errorData = await verifyResponse.json();\n                throw new Error(`Passkey verification failed: ${errorData.error_description || JSON.stringify(errorData)}`);\n            }\n\n            const verifyData = await verifyResponse.json();\n            console.log('Passkey registration completed successfully:', verifyData);\n\n            if (verifyData.id_token) {\n                try {\n                    const idToken = verifyData.id_token;\n                    const payloadBase64Url = idToken.split('.')[1];\n                    const payloadJson = atob(payloadBase64Url.replace(/-/g, '+').replace(/_/g, '/'));\n                    const payload = JSON.parse(payloadJson);\n                    if (payload.sub) {\n                        context.form.setHiddenField('enrolled_user_id', payload.sub);\n                    }\n                } catch (e) {\n                    console.error('Failed to decode ID token:', e);\n                }\n            }\n            \n            showMessage('Passkey registered successfully!', false);\n            passkeyRegisteredSuccessfully = true;\n            \n            if (registerButton) {\n                registerButton.style.display = 'none';\n            }\n\n            if (ALLOW_AUTO_PROCEED) {\n                showMessage('Success! Proceeding automatically...', false);\n                setTimeout(() => {\n                    if (context && context.form && typeof context.form.goForward === 'function') {\n                        context.form.goForward();\n                    }\n                }, 1000); // 1-second delay\n            } else {\n                if (continueButtonWrapper) {\n                    continueButtonWrapper.classList.add('visible');\n                }\n            }\n\n        } catch (error) {\n            console.error('An error occurred during passkey registration:', error);\n            if (error.name === 'NotAllowedError') {\n                showMessage('Passkey registration was cancelled. Click the button to try again.', false);\n            } else {\n                showMessage(`Passkey registration failed: ${error.message}`, true);\n            }\n            passkeyRegisteredSuccessfully = false;\n        } finally {\n            if (!passkeyRegisteredSuccessfully && registerButton) {\n                registerButton.disabled = false;\n            }\n        }\n    }\n\n    // --- Auth0 Custom Field Component Interface ---\n    return {\n        init() {\n            const configParams = context.custom.getParams();\n            if (configParams && configParams.auth0Domain && configParams.email) {\n                auth0Domain = configParams.auth0Domain;\n                email = configParams.email;\n                myAccountAt = configParams.myAccountAt;\n            } else {\n                const errorContainer = document.createElement('div');\n                errorContainer.textContent = 'Custom Field Error: Required parameters are missing.';\n                errorContainer.style.color = 'red';\n                return errorContainer;\n            }\n\n            const container = document.createElement('div');\n            container.className = 'passkey-container';\n            \n            registerButton = document.createElement('button');\n            registerButton.type = 'button';\n            registerButton.className = 'af-button af-nextButton';\n            registerButton.addEventListener('click', handleRegisterPasskey);\n            \n            const textSpan = document.createElement('span');\n            textSpan.className = 'af-button-text';\n            textSpan.style.fontWeight = 'bold';\n            textSpan.style.textAlign = 'center';\n            textSpan.style.width = '100%';\n            textSpan.textContent = 'Create a Passkey';\n\n            registerButton.appendChild(textSpan);\n\n            messageDiv = document.createElement('div');\n            messageDiv.className = 'passkey-message';\n\n            /*\n            // --- MODIFICATION: Commented out the \"Set a password instead\" button ---\n            const jumpButtonWrapper = document.createElement('div');\n            jumpButtonWrapper.className = 'af-component af-block';\n            jumpButtonWrapper.style.marginTop = '10px';\n\n            const jumpButton = document.createElement('button');\n            jumpButton.type = 'button';\n            jumpButton.className = 'af-button af-jumpButton';\n            jumpButton.style.backgroundColor = 'transparent';\n            jumpButton.style.color = '#3F59E4'; // Blue color\n\n            const jumpButtonText = document.createElement('span');\n            jumpButtonText.className = 'af-button-text';\n            jumpButtonText.style.fontWeight = 'bold';\n            jumpButtonText.textContent = 'Set a password instead';\n\n            jumpButton.appendChild(jumpButtonText);\n            jumpButtonWrapper.appendChild(jumpButton);\n\n            jumpButton.addEventListener('click', () => {\n                console.log(\"'Set a password instead' clicked. Implement form jump logic here.\");\n                // Example: If you have a step named 'password-step', you would use:\n                // if (context && context.form && typeof context.form.jumpTo === 'function') {\n                //     context.form.jumpTo('password-step');\n                // }\n            });\n            */\n\n            continueButtonWrapper = document.createElement('div');\n            continueButtonWrapper.className = 'continue-button-wrapper';\n\n            const continueButton = document.createElement('button');\n            continueButton.type = 'button';\n            continueButton.className = 'af-button af-nextButton'; \n\n            const continueButtonText = document.createElement('span');\n            continueButtonText.className = 'af-button-text';\n            continueButtonText.textContent = 'Continue';\n\n            continueButton.appendChild(continueButtonText);\n\n            continueButton.addEventListener('click', () => {\n                if (context && context.form && typeof context.form.goForward === 'function') {\n                    context.form.goForward();\n                } else {\n                    console.error('form.goForward() is not available in this context.');\n                }\n            });\n            \n            continueButtonWrapper.appendChild(continueButton);\n\n            container.appendChild(registerButton);\n            // container.appendChild(jumpButtonWrapper); // The jump button is no longer added\n            container.appendChild(messageDiv);\n            container.appendChild(continueButtonWrapper);\n\n            return container;\n        },\n\n        block() {\n            if (registerButton) registerButton.disabled = true;\n        },\n\n        unblock() {\n            if (registerButton && !passkeyRegisteredSuccessfully) {\n                registerButton.disabled = false;\n            }\n        },\n    };\n}\n",
+                "css": "/* --- ADDITION: Keyframe animation for the glow effect --- */\n@keyframes glow {\n  0% {\n    box-shadow: 0 0 0px rgba(100, 100, 100, 0.4);\n  }\n  50% {\n    box-shadow: 0 0 10px 3px rgba(100, 100, 100, 0.4);\n  }\n  100% {\n    box-shadow: 0 0 0px rgba(100, 100, 100, 0.4);\n  }\n}\n\n/* General container for the custom field */\n.passkey-container {\n    display: flex;\n    flex-direction: column;\n    align-items: center;\n    width: 100%;\n}\n\n/* --- MODIFICATION: Removed custom button styles as it now uses default Auth0 classes --- */\n\n/* Styles for the Continue button container for spacing and fade-in */\n.continue-button-wrapper {\n    margin-top: 15px; /* Adds space above the continue button */\n    width: 100%;\n    opacity: 0; /* Hidden by default for fade-in */\n    transition: opacity 0.4s ease-in-out; /* Fade-in animation */\n    display: none; /* Use display to prevent it from taking up space */\n}\n\n.continue-button-wrapper.visible {\n    opacity: 1;\n    display: block;\n}\n\n/* Modernized message box styling */\n.passkey-message {\n    display: none;\n    margin-top: 15px;\n    padding: 12px 16px;\n    border-radius: 8px; /* Softer corners */\n    text-align: left;\n    word-wrap: break-word;\n    width: 100%;\n    box-sizing: border-box;\n    display: flex; /* Using flexbox for alignment */\n    align-items: center;\n    gap: 10px; /* Space between icon and text */\n}\n\n.message-icon {\n    width: 20px;\n    height: 20px;\n    flex-shrink: 0; /* Prevents icon from shrinking */\n}\n\n/* Style for a success/info message */\n.passkey-message.info {\n    background-color: #eef2ff; /* Lighter Indigo */\n    color: #4338ca; /* Darker Indigo */\n}\n\n/* Style for an error message */\n.passkey-message.error {\n    background-color: #fee2e2; /* Lighter Red */\n    color: #b91c1c; /* Darker Red */\n}\n",
+                "params": {
+                  "email": "{{context.user.email}}",
+                  "clientId": "miWSp1Q2yeXDHxAulVU3Sq3XpfuT3xgK",
+                  "auth0Domain": "passkey-demo-awhit.oktademo.cloud",
+                  "myAccountAt": "{{vars.my_account_access_token}}",
+                  "connectionName": "Username-Password-Authentication"
+                }
+              }
+            }
+          ],
+          "next_node": "$ending"
+        }
+      }
+    ],
+    "start": {
+      "next_node": "cte_flow",
+      "coordinates": {
+        "x": -1492,
+        "y": -126
+      }
+    },
+    "ending": {
+      "resume_flow": true,
+      "coordinates": {
+        "x": 97,
+        "y": -136
+      }
+    },
+    "style": {
+      "css": "#jump_button_GqoS {\n  background-color: green;\n}"
+    }
+  },
+  "flows": {
+    "#FLOW-1#": {
+      "name": "CTE Flow",
+      "actions": [
+        {
+          "id": "cte_request",
+          "type": "HTTP",
+          "action": "SEND_REQUEST",
+          "allow_failure": false,
+          "mask_output": false,
+          "params": {
+            "method": "POST",
+            "url": "https://CUSTOM_DOMAIN/oauth/token",
+            "payload": {
+              "scope": "create:me:authentication_methods",
+              "audience": "https://CUSTOM_DOMAIN/me/",
+              "client_id": "TOKEN_EXCHANGE_CLIENT_ID",
+              "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+              "client_secret": "TOKEN_EXCHANGE_CLIENT_SECRET",
+              "subject_token": "{{context.user.user_id}}",
+              "subject_token_type": "urn:cteforms"
+            },
+            "content_type": "JSON"
+          }
+        },
+        {
+          "id": "store_shared_variable",
+          "type": "FLOW",
+          "action": "STORE_VARS",
+          "allow_failure": false,
+          "mask_output": false,
+          "params": {
+            "vars": {
+              "my_account_access_token": "{{actions.cte_request.body.access_token}}"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "connections": {}
+}
