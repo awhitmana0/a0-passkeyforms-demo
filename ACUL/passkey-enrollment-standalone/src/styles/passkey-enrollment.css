@@ -1,0 +1,53 @@
+.passkey-enrollment-theme {
+  font-family: Arial, sans-serif;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #f5f5f5;
+}
+
+.passkey-enrollment-screen {
+  width: 100%;
+  max-width: 400px;
+  padding: 2rem;
+}
+
+.passkey-enrollment-container {
+  background: white;
+  padding: 2rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  text-align: center;
+}
+
+.passkey-enrollment-container h1 {
+  margin-bottom: 1rem;
+  color: #333;
+}
+
+.passkey-enrollment-container p {
+  margin-bottom: 2rem;
+  color: #666;
+}
+
+.loading-spinner {
+  font-size: 2rem;
+  text-align: center;
+  margin-top: 1rem;
+  animation: spin 2s linear infinite;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.passkey-enrollment-container p {
+  font-size: 1.1rem;
+  font-weight: 500;
+}

@@ -74,6 +74,31 @@ Follow these steps in order to properly set up the Custom Token Exchange flow:
 3. **Test Form Functionality**: Verify the custom component can successfully call the My Account API
 4. **End-to-End Testing**: Complete a full passkey enrollment flow
 
+## Additional Enhancements
+
+Once your basic Custom Token Exchange passkey flow is working, you can implement these optional enhancements:
+
+### Enhancement 1: Custom ACUL Flow (Optional)
+Create a custom Adaptive Continuous User Login (ACUL) flow to automatically skip Auth0's default built-in passkey enrollment form when users already have passkeys enrolled via your custom flow.
+
+**Benefits:**
+- Prevents duplicate enrollment prompts
+- Provides seamless user experience
+- Maintains consistency with your custom enrollment flow
+
+**Implementation:** [Details to be added]
+
+### Enhancement 2: Application-Level Passkey Management
+Add comprehensive passkey management capabilities directly to your application interface.
+
+**Features:**
+- **Enroll Button**: Allow users to add additional passkeys from within your app
+- **Revoke Button**: Enable users to remove existing passkeys
+- **Passkey Viewer**: Display all linked passkeys with device information
+- **Management Dashboard**: Comprehensive view of user's authentication methods
+
+**Implementation:** [Details to be added]
+
 ## Auth0 Dashboard Configuration
 
 Before writing any code, we need to set up our Auth0 tenant.
@@ -151,9 +176,9 @@ Your application will need an access token that allows it to interact with the M
 
 > **Important**: This is a crucial step to allow the creation of new passkeys.
 
-## Auth0 Actions: The Brain of the Operation
+## Auth0 Actions: The Trigger
 
-This Action will be used to trigger the custom form at the right time. It should be configured to run in the post-login flow.
+This Action serves as the trigger to determine when to show the passkey enrollment form. It runs in the post-login flow and performs a simple check.
 
 ### Setup Steps
 
@@ -189,11 +214,103 @@ exports.onExecutePostLogin = async (event, api) => {
 ```
 
 
-## The Custom Auth0 Form Component
+## The Custom Form Component: The Brain of the Operation
 
-The code for the form's custom component will handle the WebAuthn API calls and communication with the My Account API. This is the core of your client-side implementation. The code is placed inside the Custom Component block within the Auth0 Forms editor.
+The custom form component is where the real magic happens. This sophisticated JavaScript component handles the complete passkey enrollment flow, from WebAuthn API calls to My Account API communication.
 
-> **Implementation**: The full code for this custom component, including the UI and the logic for interacting with the My Account API, can be found in a separate file named `form_component.js`.
+### Component Architecture
+
+The `PasskeyRegistrationField` function implements a complete custom field component with the following key sections:
+
+#### Configuration & Testing Options
+```javascript
+// Testing configuration for development vs production
+const ALLOW_DUPLICATE_PASSKEYS = false;  // Prevent duplicate passkeys in production
+const ALLOW_AUTO_PROCEED = true;         // Auto-proceed after successful registration
+```
+
+#### Core Functionality Areas
+
+**1. WebAuthn Data Conversion**
+- `arrayBufferToBase64Url()` - Converts binary data to base64url format
+- `base64UrlToArrayBuffer()` - Converts base64url back to binary for WebAuthn API
+- Essential for proper data formatting between browser and Auth0 APIs
+
+**2. User Interface Management**
+- Dynamic message display with error/success states
+- Progressive button state management (register → continue)
+- SVG icon integration for visual feedback
+- Responsive UI that adapts to enrollment flow state
+
+**3. Passkey Registration Process (`handleRegisterPasskey`)**
+The main workflow consists of four critical steps:
+
+**Step 1: Challenge Request**
+```javascript
+// Request passkey challenge from My Account API
+const challengeResponse = await fetch(`https://${auth0Domain}/me/v1/authentication-methods`, {
+    method: 'POST',
+    headers: {'Authorization': `Bearer ${myAccountAt}`},
+    body: JSON.stringify({ type: 'passkey' })
+});
+```
+
+**Step 2: WebAuthn Options Preparation**
+- Converts base64url challenge data to ArrayBuffers
+- Configures authenticator selection criteria
+- Sets up exclude credentials for duplicate prevention
+- Prepares complete `publicKeyCredentialCreationOptions`
+
+**Step 3: Browser WebAuthn API Call**
+```javascript
+// Browser prompts user for biometric/PIN authentication
+const credential = await navigator.credentials.create({ 
+    publicKey: publicKeyCredentialCreationOptions 
+});
+```
+
+**Step 4: Verification with Auth0**
+```javascript
+// Verify the attestation with Auth0's My Account API
+const verifyResponse = await fetch(`https://${auth0Domain}/me/v1/authentication-methods/passkey|new/verify`, {
+    method: 'POST',
+    headers: {'Authorization': `Bearer ${myAccountAt}`},
+    body: JSON.stringify({ auth_session, authn_response })
+});
+```
+
+#### Advanced Features
+
+**Error Handling & User Experience**
+- Comprehensive error handling for different WebAuthn failure scenarios
+- User-friendly error messages with appropriate recovery actions
+- Special handling for `NotAllowedError` (user cancellation)
+
+**Security Features**
+- Optional duplicate passkey prevention using `excludeCredentials`
+- Secure token handling and validation
+- ID token parsing and user context management
+
+**UI State Management**
+- Progressive disclosure (show continue button only after success)
+- Button state management (disable during operations)
+- Auto-proceed functionality for streamlined UX
+
+**Auth0 Integration**
+- Custom field component interface implementation
+- Parameter validation and error handling
+- Form flow control (`context.form.goForward()`)
+- Hidden field management for user tracking
+
+### Key Advantages
+
+1. **Complete Control**: Full control over the enrollment UX and flow
+2. **Security**: Uses Auth0's secure My Account API with proper token validation
+3. **Flexibility**: Configurable for testing vs production environments
+4. **User Experience**: Progressive UI with clear feedback and error handling
+5. **Integration**: Seamlessly integrates with Auth0 Forms and Actions
+
+> **Implementation**: The complete source code is embedded in the form configuration at `Auth0 Forms/passkey_enroll_basic.json`.
 
 ## Postman Collection for Testing
 
