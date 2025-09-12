@@ -1,0 +1,253 @@
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('https://cdn.jsdelivr.net/fontsource/fonts/poppins@latest/latin-500-normal.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Poppins', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  background-color: white;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.login-with-autopasskey-option-theme {
+  /* Theme wrapper */
+}
+
+.login-container {
+  background: white;
+  border-radius: 8px;
+  padding: 40px;
+  width: 100%;
+  max-width: 400px;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  margin-bottom: 32px;
+}
+
+.logo-image {
+  height: 40px;
+  width: auto;
+}
+
+.welcome-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 8px;
+}
+
+.subtitle {
+  color: #666;
+  font-size: 14px;
+  margin-bottom: 32px;
+  line-height: 1.4;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 6px;
+  color: #333;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.email-input {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+
+.email-input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.help-link {
+  color: #2563eb;
+  text-decoration: none;
+  font-size: 14px;
+  margin-bottom: 24px;
+  display: inline-block;
+}
+
+.help-link:hover {
+  text-decoration: underline;
+}
+
+.continue-btn {
+  width: 100%;
+  background: #2563eb;
+  color: white;
+  border: none;
+  padding: 12px 16px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  margin-bottom: 16px;
+}
+
+.continue-btn:hover {
+  background: #1d4ed8;
+}
+
+.signup-text {
+  color: #666;
+  font-size: 14px;
+  margin-bottom: 24px;
+}
+
+.signup-link {
+  color: #2563eb;
+  text-decoration: none;
+}
+
+.signup-link:hover {
+  text-decoration: underline;
+}
+
+.divider {
+  position: relative;
+  text-align: center;
+  margin: 24px 0;
+}
+
+.divider::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: #e5e7eb;
+}
+
+.divider span {
+  background: white;
+  padding: 0 16px;
+  color: #9ca3af;
+  font-size: 14px;
+  position: relative;
+  z-index: 1;
+}
+
+.google-btn {
+  width: 100%;
+  background: white;
+  border: 1px solid #ddd;
+  padding: 12px 16px;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.google-btn:hover {
+  border-color: #bbb;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.google-icon-img {
+  width: 18px;
+  height: 18px;
+}
+
+/* Passkey-specific styles */
+.passkey-only-container {
+  text-align: center;
+}
+
+.passkey-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 12px;
+}
+
+.passkey-subtitle {
+  color: #666;
+  font-size: 16px;
+  margin-bottom: 32px;
+  line-height: 1.4;
+}
+
+.passkey-subtle-button {
+  background: none;
+  border: none;
+  color: #2563eb;
+  font-size: 14px;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 8px 0;
+  transition: color 0.2s;
+}
+
+.passkey-subtle-button:hover {
+  color: #1d4ed8;
+  text-decoration: none;
+}
+
+.passkey-subtle-button:disabled {
+  color: #ccc;
+  cursor: not-allowed;
+}
+
+.close-button {
+  background: none;
+  border: 1px solid #ddd;
+  color: #666;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 8px 16px;
+  border-radius: 4px;
+  margin-top: 16px;
+  transition:
+    border-color 0.2s,
+    color 0.2s;
+}
+
+.close-button:hover {
+  border-color: #bbb;
+  color: #333;
+}
+
+.close-button:disabled {
+  color: #ccc;
+  border-color: #eee;
+  cursor: not-allowed;
+}
