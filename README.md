@@ -24,7 +24,9 @@ Before implementing this solution, ensure you have:
 - **Node.js & npm**: For running any optional local development tools
 - **API Testing Tool**: Postman or similar for testing token exchange flows
 - **Database Connection**: An Auth0 database connection with passkeys enabled
-- **Basic Knowledge**: Familiarity with Auth0 Actions, Forms, and the My Account API
+- **Basic Knowledge**:
+  - Familiarity with Auth0 Actions, Forms, and the My Account API
+  - Understanding of ACUL (Adaptive Continuous User Login) - see [Auth0 Universal Login Documentation](https://github.com/auth0/universal-login/tree/master) for comprehensive ACUL guides and examples
 
 ## Overview
 
@@ -32,14 +34,15 @@ The standard Auth0 passkey enrollment is designed to trigger in specific ways, s
 
 ### Solution Components Summary
 
-This solution consists of four interconnected components that work together:
+This solution consists of three core components that work together:
 
 | Component | Type | Purpose | When It Runs |
 |-----------|------|---------|--------------|
 | **Custom Token Exchange Action** | Auth0 Action (CTE Trigger) | Validates token exchange requests and sets user context | During token exchange requests |
 | **Post-Login Action** | Auth0 Action (Login Trigger) | Obtains My Account API token and renders form | Every user login |
 | **Passkey Management Form** | Auth0 Form | Provides UI for viewing, enrolling, and deleting passkeys | When rendered by Post-Login Action |
-| **ACUL Custom Theme** | Custom Theme (Optional) | Branded enrollment screen, skips for existing passkey users | During ACUL enrollment prompts |
+
+> **Note**: This solution can be combined with ACUL (Adaptive Continuous User Login) for additional enrollment flows. See the [Auth0 Universal Login Repository](https://github.com/auth0/universal-login/tree/master) for ACUL implementation guides and examples.
 
 ### How Components Interact
 
@@ -286,58 +289,36 @@ Follow these steps in order to implement the complete passkey management solutio
 5. **Delete Test**: Delete a passkey and verify it's removed
 6. **Monitor**: Check **Actions > Executions** for any errors
 
-### Step 7 (Optional): Deploy ACUL Custom Theme
-**Component**: `ACUL/passkey-enrollment-skip-example/`
+### Step 7 (Optional): ACUL Integration
+**Component**: `ACUL/passkey-enrollment-skip-example/` (optional enhancement)
 
-1. **Navigate**: **Branding > Adaptive Continuous User Login (ACUL)**
-2. **Enable Custom Theme**
-3. **Upload Files**:
-   - `passkey-enrollment-theme.js`
-   - `passkey-enrollment-theme.css`
-4. **Configure ACUL**: Set enrollment trigger conditions
-5. **Test**: Verify custom screen appears and skips for users with passkeys
+If you want to integrate this solution with ACUL (Adaptive Continuous User Login), refer to the comprehensive guides and examples in the [Auth0 Universal Login Repository](https://github.com/auth0/universal-login/tree/master).
 
-**What this does**: Provides branded ACUL enrollment screen with smart skip logic
+**What ACUL adds**: Additional enrollment prompts and flows that complement the passkey management form
 
-## Optional Enhancement: Custom ACUL Theme
+## Optional Enhancement: ACUL Integration
 
-Once your basic passkey management flow is working, you can implement a custom ACUL (Adaptive Continuous User Login) theme to enhance the passkey enrollment experience.
+This solution can be combined with **ACUL (Adaptive Continuous User Login)** to provide additional enrollment prompts and flows.
 
-### What is ACUL?
+### ACUL Custom Themes
 
-ACUL is Auth0's built-in adaptive authentication flow that can prompt users to enroll passkeys during login. The custom theme allows you to:
-- Create a branded passkey enrollment screen
-- Skip Auth0's default enrollment UI when users already have passkeys
-- Provide a seamless, on-brand user experience
+This repository includes example ACUL custom theme files in `ACUL/passkey-enrollment-skip-example/`:
+- `passkey-enrollment-theme.js` - Custom enrollment screen component
+- `passkey-enrollment-theme.css` - Theme styles
 
-### Implementation Files
+### Learn More About ACUL
 
-The ACUL custom theme is provided in `ACUL/passkey-enrollment-skip-example/`:
+For comprehensive ACUL documentation, implementation guides, and examples:
 
-**Files:**
-- `passkey-enrollment-theme.js` - Compiled React bundle containing the custom enrollment screen component
-- `passkey-enrollment-theme.css` - Minified stylesheet for the enrollment screen
+**📚 [Auth0 Universal Login Repository](https://github.com/auth0/universal-login/tree/master)**
 
-**Features:**
-- Custom branded enrollment screen
-- Loading states and animations
-- Automatic detection of existing passkeys
-- Responsive design that matches Auth0's design system
+The Universal Login repository provides:
+- Complete ACUL implementation guides
+- Custom theme examples
+- Best practices for enrollment flows
+- Integration patterns with passkey management
 
-### How to Use
-
-1. **Navigate to Dashboard**: Go to **Branding > Adaptive Continuous User Login (ACUL)** in your Auth0 Dashboard
-2. **Enable Custom Theme**: Enable the custom theme option
-3. **Upload Files**: Upload both the JavaScript and CSS files from the ACUL directory
-4. **Configure Settings**: Set up ACUL to trigger passkey enrollment based on your requirements
-5. **Test Flow**: Verify the custom screen appears during login when appropriate
-
-### Benefits
-
-- **Consistency**: Matches your brand and custom form design
-- **User Experience**: Smoother transition between enrollment prompts
-- **Control**: Full control over when and how enrollment prompts appear
-- **Skip Logic**: Automatically skip prompts for users who already have passkeys enrolled
+Refer to that repository for detailed ACUL setup instructions and advanced customization options.
 
 ## Auth0 Dashboard Configuration
 
@@ -971,95 +952,94 @@ sequenceDiagram
     participant Auth0
     participant PostLoginAction as Post-Login Action
     participant OAuthEndpoint as OAuth Token Endpoint
-    participant CTEAction as Custom Token Exchange Action
-    participant ManagementForm as Passkey Management Form
+    participant CTEAction as CTE Action
+    participant ManagementForm as Management Form
     participant MyAccountAPI as My Account API
 
-    Note over User,MyAccountAPI: Initial Login & Setup
+    Note over User,MyAccountAPI: Phase 1: User Login
     User->>Browser: Initiates login
     Browser->>Auth0: Authentication request
     Auth0->>User: Prompts for credentials
-    User->>Auth0: Provides credentials (username/password)
+    User->>Auth0: Provides username and password
     Auth0->>PostLoginAction: Triggers Post-Login Action
 
-    Note over PostLoginAction,CTEAction: Custom Token Exchange Process
-    PostLoginAction->>PostLoginAction: Check if protocol is token-exchange<br/>(prevent infinite loop)
-    PostLoginAction->>OAuthEndpoint: POST /oauth/token<br/>grant_type: token-exchange<br/>subject_token: user_id<br/>audience: My Account API<br/>scopes: read, create, delete
-    OAuthEndpoint->>CTEAction: Triggers Custom Token Exchange Action
-    CTEAction->>CTEAction: Validates request
-    CTEAction->>CTEAction: api.authentication.setUserById(subject_token)
-    CTEAction-->>OAuthEndpoint: Returns validated user context
+    Note over PostLoginAction,CTEAction: Phase 2: Custom Token Exchange
+    PostLoginAction->>PostLoginAction: Check if token exchange request
+    PostLoginAction->>OAuthEndpoint: POST /oauth/token (CTE grant type)
+    OAuthEndpoint->>CTEAction: Triggers CTE Action
+    CTEAction->>CTEAction: Validates user ID
+    CTEAction->>CTEAction: setUserById(subject_token)
+    CTEAction-->>OAuthEndpoint: Returns user context
     OAuthEndpoint-->>PostLoginAction: Returns access_token with scopes
 
-    Note over PostLoginAction,ManagementForm: Form Rendering with Token
-    PostLoginAction->>ManagementForm: api.prompt.render(FORM_ID, {<br/>vars: { api_token: access_token }<br/>})
-    ManagementForm->>ManagementForm: Decode JWT token<br/>Extract user info
-    ManagementForm->>MyAccountAPI: GET /me/v1/authentication-methods<br/>Authorization: Bearer {access_token}
-    MyAccountAPI-->>ManagementForm: Returns array of authentication methods
-    ManagementForm->>Browser: Renders UI with existing passkeys<br/>and management options
-    Browser-->>User: Displays passkey management interface
+    Note over PostLoginAction,ManagementForm: Phase 3: Form Rendering
+    PostLoginAction->>ManagementForm: render form with token
+    ManagementForm->>ManagementForm: Decode JWT token
+    ManagementForm->>MyAccountAPI: GET /me/v1/authentication-methods
+    MyAccountAPI-->>ManagementForm: Returns passkey list
+    ManagementForm->>Browser: Render UI with passkeys
+    Browser-->>User: Display management interface
 
-    Note over User,MyAccountAPI: User Action: Enroll New Passkey
-    User->>Browser: Clicks "Enroll Passkey" button
-    Browser->>MyAccountAPI: POST /me/v1/authentication-methods<br/>{ type: "passkey", connection: "..." }<br/>Authorization: Bearer {access_token}
-    MyAccountAPI-->>Browser: Returns WebAuthn challenge:<br/>{ publicKey: { challenge, rp, user, ... } }
-    Browser->>Browser: Prepare WebAuthn options<br/>Convert base64url to ArrayBuffer
-    Browser->>Browser: navigator.credentials.create({<br/>publicKey: options<br/>})
-    Browser->>User: OS/Browser WebAuthn UI<br/>(biometric/PIN prompt)
-    User-->>Browser: Provides biometric/PIN authentication
-    Browser->>Browser: Creates attestationObject<br/>Convert ArrayBuffer to base64url
-    Browser->>MyAccountAPI: POST /me/v1/authentication-methods/passkey|new/verify<br/>{ attestationObject, clientDataJSON, ... }<br/>Authorization: Bearer {access_token}
-    MyAccountAPI->>MyAccountAPI: Validates WebAuthn attestation
-    MyAccountAPI-->>Browser: Confirms enrollment success
-    Browser->>MyAccountAPI: GET /me/v1/authentication-methods<br/>(refresh list)
-    MyAccountAPI-->>Browser: Returns updated passkey list
-    Browser-->>User: "Passkey successfully enrolled!"<br/>Updates UI with new passkey
+    Note over User,MyAccountAPI: Phase 4a: Enroll New Passkey
+    User->>Browser: Click Enroll Passkey
+    Browser->>MyAccountAPI: POST /me/v1/authentication-methods
+    MyAccountAPI-->>Browser: Return WebAuthn challenge
+    Browser->>Browser: Prepare credential options
+    Browser->>Browser: navigator.credentials.create()
+    Browser->>User: Show biometric prompt
+    User-->>Browser: Provide biometric auth
+    Browser->>Browser: Create attestationObject
+    Browser->>MyAccountAPI: POST verify with attestation
+    MyAccountAPI->>MyAccountAPI: Validate attestation
+    MyAccountAPI-->>Browser: Confirm enrollment success
+    Browser->>MyAccountAPI: GET updated passkey list
+    MyAccountAPI-->>Browser: Return updated list
+    Browser-->>User: Show success message
 
-    Note over User,MyAccountAPI: User Action: Delete Existing Passkey
-    User->>Browser: Clicks "Delete" on a passkey
-    Browser->>Browser: (Optional) Confirmation dialog
-    Browser->>MyAccountAPI: DELETE /me/v1/authentication-methods/{authenticator_id}<br/>Authorization: Bearer {access_token}
-    MyAccountAPI->>MyAccountAPI: Removes passkey from user account
-    MyAccountAPI-->>Browser: Confirms deletion (204 No Content)
-    Browser->>MyAccountAPI: GET /me/v1/authentication-methods<br/>(refresh list)
-    MyAccountAPI-->>Browser: Returns updated passkey list
-    Browser-->>User: "Passkey successfully deleted!"<br/>Updates UI without deleted passkey
+    Note over User,MyAccountAPI: Phase 4b: Delete Passkey
+    User->>Browser: Click Delete on passkey
+    Browser->>Browser: Optional confirmation
+    Browser->>MyAccountAPI: DELETE /me/v1/authentication-methods/ID
+    MyAccountAPI->>MyAccountAPI: Remove passkey
+    MyAccountAPI-->>Browser: Confirm deletion
+    Browser->>MyAccountAPI: GET updated passkey list
+    MyAccountAPI-->>Browser: Return updated list
+    Browser-->>User: Show deletion success
 
-    Note over User,Browser: User Completes Form
-    User->>Browser: Clicks "Continue" or form auto-proceeds
-    Browser->>Auth0: Form completion signal
-    Auth0-->>User: Completes login flow
+    Note over User,Browser: Phase 5: Complete Login
+    User->>Browser: Click Continue
+    Browser->>Auth0: Form completion
+    Auth0-->>User: Complete login flow
 ```
 
-### Optional: ACUL Custom Theme Flow
+### Key Flow Details
 
-This is a separate, optional enhancement for handling Auth0's Adaptive Continuous User Login prompts:
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Browser
-    participant Auth0
-    participant ACULTheme as Custom ACUL Theme
-    participant MyAccountAPI as My Account API
-
-    Note over User,MyAccountAPI: ACUL Enrollment Prompt Trigger
-    User->>Browser: Logs in to application
-    Auth0->>Auth0: Determines ACUL should prompt<br/>for passkey enrollment
-    Auth0->>ACULTheme: Loads custom theme
-    ACULTheme->>MyAccountAPI: GET /me/v1/authentication-methods<br/>(check existing passkeys)
-    MyAccountAPI-->>ACULTheme: Returns authentication methods
-
-    alt User has existing passkeys
-        ACULTheme->>ACULTheme: Detect passkeys already enrolled
-        ACULTheme->>Browser: Auto-skip enrollment prompt
-        Browser-->>User: Continue to application
-    else User has no passkeys
-        ACULTheme->>Browser: Display custom enrollment screen
-        Browser-->>User: Branded passkey enrollment UI
-        User->>User: Can choose to enroll or skip
-    end
+**Token Exchange Request (Phase 2)**:
 ```
+POST /oauth/token
+{
+  grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
+  subject_token: "auth0|user123",
+  subject_token_type: "urn:cteforms",
+  audience: "https://custom-domain.com/me/",
+  scope: "read:me:authentication_methods create:me:authentication_methods delete:me:authentication_methods",
+  client_id: "...",
+  client_secret: "..."
+}
+```
+
+**Form Token Variable (Phase 3)**:
+```javascript
+api.prompt.render('FORM_ID', {
+  vars: {
+    api_token: access_token
+  }
+});
+```
+
+### ACUL Integration (Optional)
+
+This solution can be extended with ACUL (Adaptive Continuous User Login) for additional enrollment prompts. For ACUL implementation details, custom themes, and integration examples, refer to the [Auth0 Universal Login Repository](https://github.com/auth0/universal-login/tree/master).
 
 ---
 
@@ -1230,11 +1210,13 @@ Auth0 Actions/
 ```
 ACUL/passkey-enrollment-skip-example/
 ├── passkey-enrollment-theme.js
-│   Compiled React bundle for custom ACUL screen
-│   Features: Smart skip logic for existing passkey users
+│   Example custom ACUL theme (React bundle)
 │
 └── passkey-enrollment-theme.css
-    Minified styles for ACUL theme
+    Example ACUL theme styles
+
+For ACUL implementation guides, see:
+https://github.com/auth0/universal-login/tree/master
 ```
 
 ### Testing & Resources
