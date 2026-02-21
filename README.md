@@ -30,59 +30,274 @@ Before implementing this solution, ensure you have:
 
 The standard Auth0 passkey enrollment is designed to trigger in specific ways, such as during initial sign-up. This solution gives you complete control over when and where passkey management occurs, providing users with full control over their authentication methods.
 
-### How It Works
+### Solution Components Summary
 
-Our custom management flow follows these steps:
+This solution consists of four interconnected components that work together:
 
-1. **User Authentication**: A user completes a standard login to your application
-2. **Action Trigger**: An Auth0 post-login Action runs and triggers a custom Auth0 Form for passkey management
-3. **Token Exchange**: The Action performs Custom Token Exchange to obtain a privileged access token for the My Account API with full management scopes (`read`, `create`, `delete`)
-4. **Form Rendering**: The form displays the user's existing passkeys and management options
-5. **Management Operations**:
-   - **View**: Display all enrolled passkeys with device information
-   - **Enroll**: Create new passkeys using WebAuthn API (`navigator.credentials.create`)
-   - **Delete**: Remove existing passkeys from the user's account
-6. **API Communication**: All operations securely communicate with the Auth0 My Account API using the exchanged token
+| Component | Type | Purpose | When It Runs |
+|-----------|------|---------|--------------|
+| **Custom Token Exchange Action** | Auth0 Action (CTE Trigger) | Validates token exchange requests and sets user context | During token exchange requests |
+| **Post-Login Action** | Auth0 Action (Login Trigger) | Obtains My Account API token and renders form | Every user login |
+| **Passkey Management Form** | Auth0 Form | Provides UI for viewing, enrolling, and deleting passkeys | When rendered by Post-Login Action |
+| **ACUL Custom Theme** | Custom Theme (Optional) | Branded enrollment screen, skips for existing passkey users | During ACUL enrollment prompts |
 
-> **Note**: This flow leverages the extensibility of Auth0 Forms and Actions, combined with the comprehensive capabilities of the My Account API (currently in Early Access).
+### How Components Interact
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         USER LOGS IN                                 │
+└─────────────────┬───────────────────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  POST-LOGIN ACTION                                                   │
+│  • Checks if this is a token exchange (loop prevention)             │
+│  • Validates environment configuration                               │
+│  • Calls OAuth token endpoint with CTE grant                         │
+└─────────────────┬───────────────────────────────────────────────────┘
+                  │
+                  │ POST /oauth/token
+                  │ grant_type: token-exchange
+                  │ subject_token: user_id
+                  ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  OAUTH TOKEN ENDPOINT                                                │
+│  • Receives token exchange request                                   │
+│  • Triggers Custom Token Exchange Action                             │
+└─────────────────┬───────────────────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  CUSTOM TOKEN EXCHANGE ACTION                                        │
+│  • Validates subject_token (user ID)                                 │
+│  • Calls api.authentication.setUserById(subject_token)              │
+│  • Returns control to OAuth endpoint                                 │
+└─────────────────┬───────────────────────────────────────────────────┘
+                  │
+                  │ Returns access_token
+                  │ with My Account API scopes
+                  ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  POST-LOGIN ACTION (continued)                                       │
+│  • Receives access_token                                             │
+│  • Calls api.prompt.render(FORM_ID, { vars: { api_token } })       │
+└─────────────────┬───────────────────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  PASSKEY MANAGEMENT FORM                                             │
+│  • Receives {{vars.api_token}} from Action                          │
+│  • Decodes token to get user info                                    │
+│  • Lists existing passkeys (GET /me/v1/authentication-methods)      │
+│  • User can:                                                         │
+│    - Enroll new passkeys (POST + WebAuthn + POST verify)           │
+│    - Delete existing passkeys (DELETE)                               │
+│  • Uses token for all My Account API calls                          │
+└─────────────────┬───────────────────────────────────────────────────┘
+                  │
+                  ▼
+         USER COMPLETES FORM
+       LOGIN FLOW CONTINUES
+```
+
+### Architecture Components
+
+This solution consists of four distinct, interconnected components:
+
+#### 1. Custom Token Exchange (CTE) Setup
+**Purpose**: Enables secure server-side token exchange for obtaining My Account API access tokens
+
+**What it does**:
+- Defines a Custom Token Exchange Action that validates and processes token exchange requests
+- Configures your Auth0 application to allow token exchange
+- Creates a token exchange profile that links the Action to the exchange flow
+
+**Key Configuration**:
+- Subject token type: `urn:cteforms` (identifies the token exchange type)
+- Audience: My Account API (`https://YOUR_DOMAIN/me/`)
+- Scopes: `read:me:authentication_methods`, `create:me:authentication_methods`, `delete:me:authentication_methods`
+
+#### 2. Post-Login Action (Token Acquisition & Form Trigger)
+**Purpose**: Executes on every login to obtain a My Account API token and render the management form
+
+**What it does**:
+1. Performs Custom Token Exchange using the user's ID as the subject token
+2. Requests a token with the My Account API audience and full management scopes
+3. Receives the access token from the token exchange
+4. Passes the token to the form via `api.prompt.render()` with variables
+5. Handles errors and validates the token exchange succeeded
+
+**Critical Flow**: `User Login → Action → Token Exchange → Form Rendering (with token)`
+
+#### 3. Passkey Management Form
+**Purpose**: Provides the user interface and logic for complete passkey lifecycle management
+
+**What it does**:
+1. **Token Decoding**: Receives the access token from the Action and decodes it
+2. **List Passkeys**: Calls My Account API to fetch all existing passkeys
+3. **Display Interface**: Shows passkeys with device info and management options
+4. **Enrollment**: Handles WebAuthn credential creation flow when user adds a passkey
+5. **Deletion**: Removes passkeys when user deletes them
+6. **Error Handling**: Manages API errors and WebAuthn failures gracefully
+
+**Custom Components**: Embedded JavaScript components handle WebAuthn API calls, token management, and My Account API communication
+
+#### 4. ACUL Custom Theme (Optional Enhancement)
+**Purpose**: Provides a branded passkey enrollment screen that skips Auth0's default enrollment prompt
+
+**What it does**:
+- Displays a custom-branded enrollment screen during ACUL flows
+- Detects if users already have passkeys enrolled
+- Automatically skips enrollment prompts for users with existing passkeys
+- Provides consistent branding with your custom form
+
+**When to use**: If you want to control the ACUL enrollment experience and prevent duplicate prompts for users who already manage passkeys via your custom form
+
+### APIs Used
+
+This solution interacts with the following Auth0 APIs:
+
+#### 1. OAuth Token Endpoint
+- **Endpoint**: `POST https://YOUR_CUSTOM_DOMAIN/oauth/token`
+- **Purpose**: Performs Custom Token Exchange
+- **Grant Type**: `urn:ietf:params:oauth:grant-type:token-exchange`
+- **Used By**: Post-Login Action
+
+#### 2. My Account API - Authentication Methods
+All endpoints require Bearer token authentication with appropriate scopes:
+
+- **List Authentication Methods**
+  - `GET https://YOUR_CUSTOM_DOMAIN/me/v1/authentication-methods`
+  - Scope: `read:me:authentication_methods`
+  - Returns: Array of all authentication methods including passkeys
+
+- **Initiate Passkey Enrollment**
+  - `POST https://YOUR_CUSTOM_DOMAIN/me/v1/authentication-methods`
+  - Scope: `create:me:authentication_methods`
+  - Body: `{ "type": "passkey", "connection": "CONNECTION_NAME" }`
+  - Returns: WebAuthn challenge and credential creation options
+
+- **Verify Passkey Enrollment**
+  - `POST https://YOUR_CUSTOM_DOMAIN/me/v1/authentication-methods/passkey|new/verify`
+  - Scope: `create:me:authentication_methods`
+  - Body: WebAuthn attestation response
+  - Returns: Confirmation of successful enrollment
+
+- **Delete Authentication Method**
+  - `DELETE https://YOUR_CUSTOM_DOMAIN/me/v1/authentication-methods/{AUTHENTICATOR_ID}`
+  - Scope: `delete:me:authentication_methods`
+  - Returns: Confirmation of deletion
+
+#### 3. Management API (Setup Only)
+- **Endpoint**: `https://YOUR_CUSTOM_DOMAIN/api/v2/*`
+- **Purpose**: Configure CTE profiles and application settings
+- **Used By**: Initial setup via Postman collection
 
 ## Implementation Steps Overview
 
-Follow these steps in order to properly set up the Custom Token Exchange flow:
+Follow these steps in order to implement the complete passkey management solution:
 
-### Step 1: Custom Domain Setup
-1. **Configure Custom Domain**: Ensure your Auth0 tenant has a custom domain configured and verified
-2. **Update Application URLs**: All callback URLs, logout URLs, and origins must use your custom domain
-3. **Test Login Flow**: Verify that users can successfully log in via your custom domain
+### Step 1: Prerequisites & Custom Domain
+**Required before starting:**
+1. **Custom Domain**: Configure and verify a custom domain in your Auth0 tenant
+   - Why: Passkeys are bound to domains; custom domain prevents invalidation
+   - Configure at: **Settings > Custom Domains**
+2. **Database Connection**: Enable passkeys on a database connection
+   - Navigate to: **Authentication > Database > [Your Connection] > Authentication Methods**
+   - Toggle: **Passkeys** ON
+3. **Application**: Create or identify the application that will use passkey management
+4. **My Account API**: Enable and configure scopes on your application
+   - Navigate to: **Applications > [Your App] > APIs**
+   - Find: **My Account API**
+   - Enable scopes: `read:me:authentication_methods`, `create:me:authentication_methods`, `delete:me:authentication_methods`
 
-> **Critical**: All subsequent API calls must use your custom domain, not the tenant URL (e.g., `https://your-domain.com/oauth/token` not `https://tenant.auth0.com/oauth/token`)
+> **Critical**: All subsequent configuration must use your custom domain, not the tenant URL.
 
-### Step 2: Custom Token Exchange Configuration & Testing
-1. **Run Postman Collection**: Use the provided Postman collection to configure Custom Token Exchange
-2. **Update Postman Variables**: Set `auth0_domain` to your **custom domain** (not tenant URL)
-3. **Test Token Exchange Flow**:
-   - Complete all setup requests (1-4)
-   - Execute the token exchange test (request 8)
-   - Verify you receive a valid access token with the required scopes
-4. **Validate Token**: Confirm the returned token has all management scopes: `read:me:authentication_methods`, `create:me:authentication_methods`, and `delete:me:authentication_methods`
+### Step 2: Deploy Custom Token Exchange Action
+**Component**: `Auth0 Actions/custom-token-exchange-basic-example.js`
 
-> **Important**: The token exchange endpoint must be called using your custom domain: `https://your-custom-domain.com/oauth/token`
+1. **Create Action**:
+   - **Actions > Library** → **Create Action** → **Build from Scratch**
+   - Name: `Custom Token Exchange - Passkey Management`
+   - Trigger: **Custom Token Exchange**
+2. **Add Code**: Copy from `custom-token-exchange-basic-example.js`
+3. **Deploy**: Click **Deploy**
+4. **Note Action ID**: You'll need this for the Postman collection
 
-### Step 3: Auth0 Forms Integration
-1. **Import Form Configuration**: Use the provided `Auth0 Forms/passkey_manager_demo.json` to create your Auth0 Form
-2. **Update Form Configuration**: Ensure your custom domain and client credentials are correctly configured
-3. **Deploy Actions**: Make sure both your Custom Token Exchange Action and Post-Login Action are deployed and active
-4. **Test End-to-End Flow**:
-   - Trigger the form via your Post-Login Action
-   - Monitor Action executions in the Auth0 Dashboard
-   - Verify Custom Token Exchange completes successfully with all required scopes
-   - Confirm the form displays existing passkeys and management options
+**What this does**: Validates token exchange requests and establishes user context
 
-### Step 4: Validation & Monitoring
-1. **Monitor Executions**: Check Auth0 Dashboard > Actions > Executions for successful token exchanges
-2. **Review Logs**: Look for `secte` (successful) or `fecte` (failed) log entries
-3. **Test Form Functionality**: Verify the custom component can successfully call the My Account API
-4. **End-to-End Testing**: Complete a full passkey enrollment flow
+### Step 3: Configure Token Exchange Profile (via Postman)
+**Component**: `Postman/passkey-forms-demo-collection.json`
+
+1. **Import Collection**: Import the Postman collection
+2. **Configure Environment Variables**:
+   - `YOUR_AUTH0_DOMAIN`: Your custom domain
+   - `MANAGEMENT_API_CLIENT_ID` & `SECRET`: For Management API access
+   - `CLIENT_ID` & `CLIENT_SECRET`: Your application credentials
+   - `ACTION_NAME`: Name of your CTE Action from Step 2
+3. **Run Setup Requests** (in order):
+   - Request 1: Get Management API Token
+   - Request 2: Enable CTE on Application
+   - Request 3: Get Action ID
+   - Request 4: Create Token Exchange Profile
+4. **Test Token Exchange**:
+   - Request 8: Test Custom Token Exchange
+   - Verify: Returns `access_token` with all three scopes
+
+**What this does**: Links your CTE Action to the token exchange flow and enables your application to use it
+
+### Step 4: Deploy Post-Login Action
+**Component**: `Auth0 Actions/post-login-trigger-get-token-and-render-form.js`
+
+1. **Create Action**:
+   - **Actions > Library** → **Create Action**
+   - Name: `Post-Login - Passkey Management Form`
+   - Trigger: **Login / Post Login**
+2. **Add Code**: Copy from `post-login-trigger-get-token-and-render-form.js`
+3. **Add Dependencies**: Add `axios` module
+4. **Configure Secrets**:
+   - `CTE_CLIENT_ID`: Your application client ID
+   - `CTE_CLIENT_SECRET`: Your application client secret
+   - `MY_ACCOUNT_API_AUDIENCE_CUSTOM_DOMAIN`: `https://YOUR_CUSTOM_DOMAIN/me/`
+   - `AUTH0_CUSTOM_DOMAIN`: `YOUR_CUSTOM_DOMAIN` (no https://)
+5. **Update Form ID**: Line 108 - replace with your form ID (from Step 5)
+6. **Deploy Action**
+7. **Add to Login Flow**: **Actions > Flows > Login** → Drag action into flow
+
+**What this does**: Performs token exchange on login and passes token to form
+
+### Step 5: Deploy Passkey Management Form
+**Component**: `Auth0 Forms/passkey_manager_demo.json`
+
+1. **Import Form**:
+   - **Branding > Forms > Library** → **Create Form** → **Import**
+   - Select `passkey_manager_demo.json`
+2. **Review Configuration**: Verify custom domain references
+3. **Deploy Form**
+4. **Copy Form ID**: Note the Form ID for use in Post-Login Action (Step 4, line 108)
+
+**What this does**: Provides the UI and logic for passkey management operations
+
+### Step 6: End-to-End Testing
+1. **Login Test**: Log in to your application
+2. **Form Display**: Verify the passkey management form appears
+3. **List Test**: Confirm existing passkeys display (or "No passkeys" message)
+4. **Enroll Test**: Click "Enroll Passkey" and complete WebAuthn flow
+5. **Delete Test**: Delete a passkey and verify it's removed
+6. **Monitor**: Check **Actions > Executions** for any errors
+
+### Step 7 (Optional): Deploy ACUL Custom Theme
+**Component**: `ACUL/passkey-enrollment-skip-example/`
+
+1. **Navigate**: **Branding > Adaptive Continuous User Login (ACUL)**
+2. **Enable Custom Theme**
+3. **Upload Files**:
+   - `passkey-enrollment-theme.js`
+   - `passkey-enrollment-theme.css`
+4. **Configure ACUL**: Set enrollment trigger conditions
+5. **Test**: Verify custom screen appears and skips for users with passkeys
+
+**What this does**: Provides branded ACUL enrollment screen with smart skip logic
 
 ## Optional Enhancement: Custom ACUL Theme
 
@@ -136,49 +351,206 @@ This is the connection where Auth0 will store the passkey credentials.
 2. Select a database connection (or create a new one)
 3. Go to the **Authentication Methods** tab and enable the **Passkeys** toggle
 
-### Create a Custom Auth0 Form
+## Implementation: Passkey Management Form
 
-This form implements the complete passkey management solution including token exchange, viewing, enrollment, and deletion capabilities. The provided form (`passkey_manager_demo.json`) includes all the logic and UI components needed for full passkey lifecycle management.
+**File**: `Auth0 Forms/passkey_manager_demo.json`
 
-#### Form Architecture
+This form provides the complete user interface and logic for passkey lifecycle management. It receives the access token from the Post-Login Action and uses it to interact with the My Account API.
 
-The form consists of multiple components working together:
+### How the Form Receives the Token
 
-**1. Token Decoding Flow**
-- Decodes JWT tokens to extract user information
-- Validates token structure and handles errors gracefully
-- Stores decoded user data for form components
+The Post-Login Action passes the token when rendering the form:
 
-**2. Passkey Management Interface**
-- Lists all existing passkeys with device information
-- Provides enrollment button for adding new passkeys
-- Includes delete functionality for removing passkeys
-- Real-time updates after management operations
+```javascript
+// In the Post-Login Action:
+api.prompt.render('FORM_ID', {
+  vars: {
+    api_token: myAccountToken  // Token with management scopes
+  }
+});
+```
 
-**3. Custom Components**
-- **WebAuthn Integration**: Handles `navigator.credentials.create()` for passkey generation
-- **My Account API Communication**: Full CRUD operations (read, create, delete) for passkeys
-- **User Experience**: Progressive UI with status messages and button states
-- **Error Handling**: Comprehensive error management with user-friendly messages
-- **Security Features**: Secure token handling and validation
+The form accesses this token internally as `{{vars.api_token}}` and uses it for all My Account API calls.
 
-#### Configuration Parameters
+### Form Architecture & Flow
 
-The form receives these parameters from the Post-Login Action:
-- `api_token`: Access token obtained via Custom Token Exchange with full management scopes
-- User context data extracted from the ID token
+**1. Token Decoding & Validation**
+- **Step 1**: Form receives `{{vars.api_token}}` from Action
+- **Step 2**: Decodes the JWT token to extract user information
+- **Step 3**: Validates token structure and handles decoding errors
+- **Step 4**: Stores decoded user data for display
 
-#### Setup Instructions
+**2. List Existing Passkeys**
+- **API Call**: `GET /me/v1/authentication-methods`
+- **Headers**: `Authorization: Bearer {{vars.api_token}}`
+- **Returns**: Array of all authentication methods
+- **Filtering**: Extracts only passkey-type methods
+- **Display**: Shows each passkey with:
+  - Authenticator ID
+  - Device name/type
+  - Created date
+  - Delete button
 
-1. Go to **Branding > Forms > Library**
-2. Select **Create Form** and choose **"Blank Form"**
-3. Import the provided JSON configuration from `Auth0 Forms/passkey_manager_demo.json`
-4. **Critical**: Review and update any configuration values:
-   - Ensure custom domain references are correct
-   - Verify API endpoint URLs match your tenant configuration
-5. Deploy the form and note its Form ID for use in your Post-Login Action
+**3. Enroll New Passkey**
 
-> **Important**: The form expects to receive a properly scoped access token from the Action. Ensure your Custom Token Exchange Action requests all necessary scopes: `read:me:authentication_methods`, `create:me:authentication_methods`, and `delete:me:authentication_methods`.
+When user clicks "Enroll Passkey":
+
+- **Step 1**: `POST /me/v1/authentication-methods`
+  - Body: `{ type: "passkey", connection: "CONNECTION_NAME" }`
+  - Returns: WebAuthn challenge and credential creation options
+
+- **Step 2**: Prepare WebAuthn options
+  - Convert base64url challenge to ArrayBuffer
+  - Configure authenticator selection criteria
+  - Set relying party (RP) information
+
+- **Step 3**: Call WebAuthn API
+  ```javascript
+  const credential = await navigator.credentials.create({
+    publicKey: publicKeyCredentialCreationOptions
+  });
+  ```
+  - Browser shows biometric/PIN prompt
+  - User authenticates
+  - Browser returns attestationObject
+
+- **Step 4**: Verify with Auth0
+  - `POST /me/v1/authentication-methods/passkey|new/verify`
+  - Body: attestationObject, clientDataJSON, credential ID
+  - Returns: Confirmation of successful enrollment
+
+- **Step 5**: Refresh passkey list
+  - Call `GET /me/v1/authentication-methods` again
+  - Update UI to show new passkey
+
+**4. Delete Existing Passkey**
+
+When user clicks "Delete" on a passkey:
+
+- **Step 1**: Confirmation (optional)
+  - Show confirmation dialog
+  - User confirms deletion intent
+
+- **Step 2**: API call
+  - `DELETE /me/v1/authentication-methods/{authenticator_id}`
+  - Returns: 204 No Content on success
+
+- **Step 3**: Refresh passkey list
+  - Call `GET /me/v1/authentication-methods` again
+  - Update UI to remove deleted passkey
+
+**5. Error Handling**
+- **API Errors**: Displays user-friendly messages for API failures
+- **WebAuthn Errors**: Handles user cancellation and authenticator failures
+- **Token Errors**: Shows clear message if token is invalid or missing
+- **Network Errors**: Graceful handling of connectivity issues
+
+### Custom Components (Embedded in Form)
+
+The form includes custom JavaScript components that handle:
+
+**WebAuthn Integration**:
+- Data conversion between ArrayBuffer and base64url
+- Credential creation options preparation
+- Browser API interactions
+- Attestation response formatting
+
+**My Account API Client**:
+- HTTP request handling with proper authentication
+- Response parsing and error handling
+- Token injection in Authorization headers
+- Endpoint URL construction with custom domain
+
+**UI State Management**:
+- Loading states during API calls
+- Success/error message display
+- Button enable/disable states
+- Dynamic list updates after operations
+
+**User Experience Features**:
+- Progressive disclosure (show relevant options based on state)
+- Real-time feedback during operations
+- Clear success/error messaging
+- Responsive design for all screen sizes
+
+### Setup Instructions
+
+1. **Import Form**:
+   - Go to **Branding > Forms > Library** in Auth0 Dashboard
+   - Click **Create Form**
+   - Select **"Blank Form"**
+   - Click **Import** and select `Auth0 Forms/passkey_manager_demo.json`
+   - Click **Save**
+
+2. **Configure Form** (if needed):
+   - Review the form structure in the visual editor
+   - Ensure the custom domain is referenced correctly in any hardcoded URLs
+   - Verify the token variable name matches what your Action sends: `{{vars.api_token}}`
+
+3. **Deploy Form**:
+   - Click **Deploy** in the form editor
+   - Copy the Form ID (shown in the URL or form details)
+   - Example Form ID: `ap_joHLLXmZZhDZksdHZwDxMW`
+
+4. **Update Post-Login Action**:
+   - Open your Post-Login Action
+   - Update line 108 with your Form ID:
+     ```javascript
+     api.prompt.render('YOUR_FORM_ID_HERE', {
+       vars: {
+         api_token: myAccountToken
+       }
+     });
+     ```
+   - Redeploy the Action
+
+### Form Variables Reference
+
+| Variable | Source | Purpose |
+|----------|--------|---------|
+| `{{vars.api_token}}` | Post-Login Action | Access token for My Account API calls |
+| `{{context.user.user_id}}` | Auth0 Context | User ID for display |
+| `{{context.user.email}}` | Auth0 Context | User email for display |
+
+### Critical Requirements
+
+✅ **Token Must Have All Scopes**:
+- `read:me:authentication_methods` - Required to list passkeys
+- `create:me:authentication_methods` - Required to enroll new passkeys
+- `delete:me:authentication_methods` - Required to delete passkeys
+
+❌ **Without proper scopes**, the form will display API errors when trying to perform operations.
+
+✅ **Custom Domain Required**:
+- All My Account API calls must use your custom domain
+- The form constructs URLs like: `https://{{YOUR_CUSTOM_DOMAIN}}/me/v1/authentication-methods`
+
+❌ **Using tenant domain** (e.g., `tenant.auth0.com`) will cause passkey invalidation if tenant URL changes.
+
+### Testing the Form
+
+1. **Test Token Reception**:
+   - Add a test step in the form that displays token presence
+   - Verify token is not undefined/null
+   - Check token format (should be JWT: three parts separated by dots)
+
+2. **Test List Operation**:
+   - Form should call GET endpoint on load
+   - Should display "No passkeys" or show existing passkeys
+   - Check browser console for API errors
+
+3. **Test Enrollment**:
+   - Click "Enroll Passkey" button
+   - Verify WebAuthn prompt appears
+   - Complete authentication
+   - Verify new passkey appears in list
+
+4. **Test Deletion**:
+   - Click "Delete" on an existing passkey
+   - Verify passkey is removed from list
+   - Verify API call succeeds (check network tab)
+
+> **Debugging Tip**: Open browser Developer Tools (F12) → Network tab to see all API calls the form makes. Look for calls to `/me/v1/authentication-methods` and check their status codes and responses.
 
 ### Configure the Application with My Account API Scopes
 
@@ -195,88 +567,191 @@ Your application will need an access token that allows it to perform full passke
 
 > **Important**: All three scopes are required for complete passkey management functionality. Without these scopes, the form will not be able to perform management operations.
 
-## Auth0 Actions
+## Implementation: Auth0 Actions
 
-This solution requires two types of Actions working together to enable secure passkey management.
+Two distinct Actions work together to enable the Custom Token Exchange flow:
 
-### Action 1: Custom Token Exchange Action
-
-This Action handles the token exchange process, validating the request and setting the appropriate user context.
+### Action 1: Custom Token Exchange Action (CTE Handler)
 
 **File**: `Auth0 Actions/custom-token-exchange-basic-example.js`
 
-**Purpose**:
-- Validates token exchange requests
-- Sets the user ID for the token exchange
-- Runs in the Custom Token Exchange flow
+**Trigger Type**: `Custom Token Exchange`
 
-**Setup**:
-1. Go to **Actions > Library** in the Auth0 Dashboard
-2. Create a new Action with **Trigger**: Custom Token Exchange
-3. Copy the code from `custom-token-exchange-basic-example.js`
-4. Deploy the Action
+**When it runs**: Every time a Custom Token Exchange request is made
 
-**Key Code**:
+**What it does**:
+1. Receives the token exchange request from the OAuth endpoint
+2. Extracts the `subject_token` (user ID) from the request
+3. Calls `api.authentication.setUserById()` to validate and set the user context
+4. Returns control to the OAuth endpoint to complete the exchange
+
+**Code**:
 ```javascript
+/**
+ * Custom Token Exchange Action
+ * Validates token exchange requests and sets user context
+ */
 exports.onExecuteCustomTokenExchange = async (event, api) => {
+  // The subject_token contains the user ID passed from the Post-Login Action
+  // This validates that the user exists and sets the context for the token
   api.authentication.setUserById(event.transaction.subject_token);
+
   return;
 };
 ```
 
-### Action 2: Post-Login Action (Form Trigger)
+**Setup Steps**:
+1. Go to **Actions > Library** in the Auth0 Dashboard
+2. Click **Create Action** → **Build from Scratch**
+3. **Name**: `Custom Token Exchange - Passkey Management`
+4. **Trigger**: Select **Custom Token Exchange**
+5. Paste the code from `custom-token-exchange-basic-example.js`
+6. Click **Deploy**
+7. **Important**: Note the Action ID (needed for creating the token exchange profile in Postman)
 
-This Action triggers the passkey management form and performs the token exchange to obtain the necessary access token.
+**Key Points**:
+- This Action is **not** added to any flow manually
+- It's automatically triggered when the token exchange profile is configured
+- It must be deployed before creating the token exchange profile
+- It validates the subject token and establishes user context
+
+---
+
+### Action 2: Post-Login Action (Token Acquisition & Form Renderer)
 
 **File**: `Auth0 Actions/post-login-trigger-get-token-and-render-form.js`
 
-**Purpose**:
-- Executes on every user login
-- Performs Custom Token Exchange to get My Account API token
-- Passes the token to the management form
-- Handles errors gracefully
+**Trigger Type**: `Post-Login`
 
-**Features**:
-- Environment validation (checks for required secrets)
-- Token exchange with full management scopes
-- Error handling and logging
-- Form rendering with token injection
+**When it runs**: Every time a user completes authentication
 
-**Setup**:
-1. Go to **Actions > Library** in the Auth0 Dashboard
-2. Create a new Action with **Trigger**: Post-Login
-3. Copy the code from `post-login-trigger-get-token-and-render-form.js`
-4. Add the **axios** dependency
-5. Configure the following **Secrets**:
-   - `CTE_CLIENT_ID`: Client ID for token exchange
-   - `CTE_CLIENT_SECRET`: Client Secret for token exchange
-   - `MY_ACCOUNT_API_AUDIENCE_CUSTOM_DOMAIN`: Audience URI (e.g., `https://auth.custom.com/me/`)
-   - `AUTH0_CUSTOM_DOMAIN`: Your Auth0 custom domain (e.g., `auth.custom.com`)
-6. Update the Form ID in line 108 to match your deployed form
-7. Deploy the Action
-8. Add it to your **Login** flow
+**What it does**:
+1. **Skip Check**: Verifies this isn't a token exchange request (prevents infinite loops)
+2. **Environment Validation**: Checks all required secrets are configured correctly
+3. **Token Exchange**: Calls the OAuth token endpoint with Custom Token Exchange grant type
+4. **Token Acquisition**: Receives an access token with My Account API scopes
+5. **Form Rendering**: Passes the token to the management form via `api.prompt.render()`
+6. **Error Handling**: Denies access if token exchange fails
 
-**Important Configuration Notes**:
-- The `AUTH0_CUSTOM_DOMAIN` should be the bare domain (no `https://`)
-- The Action requests three scopes: `read:me:authentication_methods`, `create:me:authentication_methods`, `delete:me:authentication_methods`
-- The Action skips execution for token exchange requests to prevent loops
-
-### Simple Example (Minimal Implementation)
-
-If you prefer a simpler approach without token exchange in the Action, here's a minimal example:
-
+**Token Exchange Details**:
 ```javascript
-/**
- * Minimal Post-Login Action that renders the form
- * Note: This assumes the form handles its own token exchange
- */
-exports.onExecutePostLogin = async (event, api) => {
-  // Replace 'FORM_ID' with the actual ID of your deployed form
-  api.prompt.render('FORM_ID');
-};
+// What the Action sends to the OAuth endpoint:
+{
+  grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
+  client_id: event.secrets.CTE_CLIENT_ID,
+  client_secret: event.secrets.CTE_CLIENT_SECRET,
+  audience: event.secrets.MY_ACCOUNT_API_AUDIENCE_CUSTOM_DOMAIN, // https://auth.custom.com/me/
+  scope: 'read:me:authentication_methods create:me:authentication_methods delete:me:authentication_methods',
+  subject_token: event.user.user_id, // The user who just logged in
+  subject_token_type: 'urn:cteforms'
+}
+
+// What it receives back:
+{
+  access_token: 'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...',
+  token_type: 'Bearer',
+  scope: 'read:me:authentication_methods create:me:authentication_methods delete:me:authentication_methods'
+}
 ```
 
-> **Recommended Approach**: Use the full implementation from `post-login-trigger-get-token-and-render-form.js` as it provides better error handling, validation, and security.
+**Setup Steps**:
+
+1. **Create Action**:
+   - Go to **Actions > Library**
+   - Click **Create Action** → **Build from Scratch**
+   - **Name**: `Post-Login - Passkey Management Form`
+   - **Trigger**: Select **Login / Post Login**
+   - Paste the code from `post-login-trigger-get-token-and-render-form.js`
+
+2. **Add Dependencies**:
+   - Click **Dependencies** (package icon)
+   - Add module: `axios` (latest version)
+
+3. **Configure Secrets**:
+   Click **Secrets** (key icon) and add:
+
+   | Secret Name | Value | Example |
+   |-------------|-------|---------|
+   | `CTE_CLIENT_ID` | Client ID of your application | `a1b2c3d4e5f6g7h8` |
+   | `CTE_CLIENT_SECRET` | Client secret of your application | `secret_abc123...` |
+   | `MY_ACCOUNT_API_AUDIENCE_CUSTOM_DOMAIN` | My Account API audience (full URL) | `https://auth.custom.com/me/` |
+   | `AUTH0_CUSTOM_DOMAIN` | Your custom domain (bare domain, no https://) | `auth.custom.com` |
+
+4. **Update Form ID**:
+   - Find line 108: `api.prompt.render('ap_joHLLXmZZhDZksdHZwDxMW', {`
+   - Replace `ap_joHLLXmZZhDZksdHZwDxMW` with your actual Form ID
+   - You'll get the Form ID after deploying your form
+
+5. **Deploy Action**:
+   - Click **Deploy**
+
+6. **Add to Login Flow**:
+   - Go to **Actions > Flows**
+   - Select **Login**
+   - Drag your Action from the right sidebar into the flow
+   - Click **Apply**
+
+**Critical Configuration Notes**:
+
+- **Custom Domain**: Must be configured and used for all URLs
+  - ❌ Wrong: `AUTH0_CUSTOM_DOMAIN: https://auth.custom.com` (includes protocol)
+  - ✅ Right: `AUTH0_CUSTOM_DOMAIN: auth.custom.com` (bare domain)
+  - ❌ Wrong: `MY_ACCOUNT_API_AUDIENCE_CUSTOM_DOMAIN: https://tenant.auth0.com/me/` (tenant URL)
+  - ✅ Right: `MY_ACCOUNT_API_AUDIENCE_CUSTOM_DOMAIN: https://auth.custom.com/me/` (custom domain)
+
+- **Subject Token Type**: Must match your token exchange profile
+  - The Action uses: `subject_token_type: 'urn:cteforms'`
+  - Your token exchange profile must use: `subject_token_type: 'urn:cteforms'`
+  - These **must** match exactly
+
+- **Loop Prevention**: The Action checks `event.transaction.protocol !== "oauth2-token-exchange"`
+  - This prevents the Action from running during token exchange
+  - Without this check, you'd get infinite loops
+
+**What the Form Receives**:
+
+The form receives the token via the `vars` object:
+```javascript
+api.prompt.render('FORM_ID', {
+  vars: {
+    api_token: myAccountToken  // Access token with all management scopes
+  }
+});
+```
+
+The form can then access this as `{{vars.api_token}}` in its configuration.
+
+---
+
+### Why Both Actions Are Required
+
+| Action | Purpose | Runs When | Result |
+|--------|---------|-----------|--------|
+| **Custom Token Exchange Action** | Validates the token exchange request and sets user context | OAuth endpoint processes token exchange | User context established for token |
+| **Post-Login Action** | Obtains the token and delivers it to the form | User completes login | Form receives token and can call My Account API |
+
+**The Flow**:
+```
+User Logs In
+    ↓
+Post-Login Action Runs
+    ↓
+Action calls OAuth /token endpoint (token exchange)
+    ↓
+OAuth endpoint triggers CTE Action
+    ↓
+CTE Action validates user and returns
+    ↓
+OAuth endpoint returns access token
+    ↓
+Post-Login Action receives token
+    ↓
+Post-Login Action renders form with token
+    ↓
+Form uses token to call My Account API
+```
+
+> **Important**: The form **cannot** function without the token from the Post-Login Action. There is no "simpler" implementation - both Actions are required for this architecture to work.
 
 
 ## Form Components Overview
@@ -339,282 +814,472 @@ When a user deletes an existing passkey:
 
 ## Postman Collection for Testing
 
-This collection includes requests for both **Custom Token Exchange setup/testing** and **My Account API testing** for the complete passkey management flow.
+The Postman collection provides all the API calls needed to set up and test this solution. It's organized into two main categories.
 
 > **Resource**: The full Postman collection is provided at `Postman/passkey-forms-demo-collection.json`.
 
-### Custom Token Exchange Requests
+> **Important Note**: The Postman collection may contain placeholder values like `urn:auth0:form:token-exchange` for the `subject_token_type`. You must update this to match the value used in your Post-Login Action (`urn:cteforms` in the provided Action code). The `subject_token_type` in the token exchange profile, the token exchange request, and the Post-Login Action **must all match exactly**.
 
-These requests are essential for configuring and testing the Custom Token Exchange flow that enables secure token acquisition in Auth0 Forms.
+### Collection Organization
 
-#### Setup & Configuration
+#### Part 1: One-Time Setup (Management API)
+
+These requests configure Custom Token Exchange in your Auth0 tenant. Run these once during initial setup.
 
 **1. Get Management API Token**
-- **Method**: `POST`
-- **URL**: `https://{{YOUR_AUTH0_DOMAIN}}/oauth/token`
-- **Headers**: `Content-Type: application/x-www-form-urlencoded`
-- **Body**:
-  ```
-  grant_type=client_credentials
-  client_id={{MANAGEMENT_API_CLIENT_ID}}
-  client_secret={{MANAGEMENT_API_CLIENT_SECRET}}
-  audience=https://{{YOUR_AUTH0_DOMAIN}}/api/v2/
-  ```
+- **Endpoint**: `POST /oauth/token`
+- **Purpose**: Obtain a token to call Management API
+- **Required Variables**: `MANAGEMENT_API_CLIENT_ID`, `MANAGEMENT_API_CLIENT_SECRET`
 
 **2. Enable Custom Token Exchange on Application**
-- **Method**: `PATCH`
-- **URL**: `https://{{YOUR_AUTH0_DOMAIN}}/api/v2/clients/{{CLIENT_ID}}`
-- **Headers**: 
-  - `Content-Type: application/json`
-  - `Authorization: Bearer {{MANAGEMENT_API_TOKEN}}`
-- **Body**:
-  ```json
-  {
-    "token_exchange": {
-      "allow_any_profile_of_type": ["custom_authentication"]
-    }
-  }
-  ```
+- **Endpoint**: `PATCH /api/v2/clients/{{CLIENT_ID}}`
+- **Purpose**: Allow your application to use Custom Token Exchange
+- **Sets**: `token_exchange.allow_any_profile_of_type: ["custom_authentication"]`
 
 **3. Get Action ID**
-- **Method**: `GET`
-- **URL**: `https://{{YOUR_AUTH0_DOMAIN}}/api/v2/actions/actions?actionName={{ACTION_NAME}}`
-- **Headers**: `Authorization: Bearer {{MANAGEMENT_API_TOKEN}}`
+- **Endpoint**: `GET /api/v2/actions/actions?actionName={{ACTION_NAME}}`
+- **Purpose**: Retrieve the ID of your deployed Custom Token Exchange Action
+- **Returns**: Action ID needed for profile creation
 
 **4. Create Custom Token Exchange Profile**
-- **Method**: `POST`
-- **URL**: `https://{{YOUR_AUTH0_DOMAIN}}/api/v2/token-exchange-profiles`
-- **Headers**:
-  - `Content-Type: application/json`
-  - `Authorization: Bearer {{MANAGEMENT_API_TOKEN}}`
-- **Body**:
+- **Endpoint**: `POST /api/v2/token-exchange-profiles`
+- **Purpose**: Create the profile linking your Action to the token exchange flow
+- **Configuration**:
   ```json
   {
-    "name": "passkey-form-token-exchange",
-    "subject_token_type": "urn:auth0:form:token-exchange",
+    "name": "passkey-management-token-exchange",
+    "subject_token_type": "urn:cteforms",
     "action_id": "{{ACTION_ID}}",
     "type": "custom_authentication"
   }
   ```
-
-#### Profile Management
+- **Important**: The `subject_token_type` value (`urn:cteforms`) **must match exactly** what the Post-Login Action uses. If you change it, update both the profile and the Action.
 
 **5. Get All Token Exchange Profiles**
-- **Method**: `GET`
-- **URL**: `https://{{YOUR_AUTH0_DOMAIN}}/api/v2/token-exchange-profiles`
-- **Headers**: `Authorization: Bearer {{MANAGEMENT_API_TOKEN}}`
+- **Endpoint**: `GET /api/v2/token-exchange-profiles`
+- **Purpose**: View all configured token exchange profiles
 
-**6. Update Token Exchange Profile**
-- **Method**: `PATCH`
-- **URL**: `https://{{YOUR_AUTH0_DOMAIN}}/api/v2/token-exchange-profiles/{{PROFILE_ID}}`
-- **Headers**:
-  - `Content-Type: application/json`
-  - `Authorization: Bearer {{MANAGEMENT_API_TOKEN}}`
-- **Body**:
-  ```json
-  {
-    "name": "updated-profile-name",
-    "subject_token_type": "urn:auth0:form:updated-token-exchange"
-  }
-  ```
+**6. Update Token Exchange Profile** (Optional)
+- **Endpoint**: `PATCH /api/v2/token-exchange-profiles/{{PROFILE_ID}}`
+- **Purpose**: Modify an existing profile
 
-**7. Delete Token Exchange Profile**
-- **Method**: `DELETE`
-- **URL**: `https://{{YOUR_AUTH0_DOMAIN}}/api/v2/token-exchange-profiles/{{PROFILE_ID}}`
-- **Headers**: `Authorization: Bearer {{MANAGEMENT_API_TOKEN}}`
+**7. Delete Token Exchange Profile** (Optional)
+- **Endpoint**: `DELETE /api/v2/token-exchange-profiles/{{PROFILE_ID}}`
+- **Purpose**: Remove a profile during troubleshooting or cleanup
 
-#### Testing Token Exchange
+#### Part 2: Testing Custom Token Exchange
 
-**8. Custom Token Exchange Request**
-- **Method**: `POST`
-- **URL**: `https://{{YOUR_AUTH0_DOMAIN}}/oauth/token`
-- **Headers**: `Content-Type: application/x-www-form-urlencoded`
-- **Body**:
-  ```
-  grant_type=urn:ietf:params:oauth:grant-type:token-exchange
-  audience={{API_IDENTIFIER}}
-  scope=openid read:me:authentication_methods create:me:authentication_methods delete:me:authentication_methods
-  subject_token_type=urn:auth0:form:token-exchange
-  subject_token={{SUBJECT_TOKEN}}
-  client_id={{CLIENT_ID}}
-  client_secret={{CLIENT_SECRET}}
-  ```
+**8. Test Custom Token Exchange**
+- **Endpoint**: `POST /oauth/token`
+- **Purpose**: Verify that Custom Token Exchange is working correctly
+- **Grant Type**: `urn:ietf:params:oauth:grant-type:token-exchange`
+- **Critical Parameters**:
+  - `audience`: `https://{{YOUR_CUSTOM_DOMAIN}}/me/` (My Account API)
+  - `scope`: `read:me:authentication_methods create:me:authentication_methods delete:me:authentication_methods`
+  - `subject_token_type`: `urn:cteforms`
+  - `subject_token`: A valid user ID (e.g., `auth0|123456`)
+- **Success**: Returns `access_token` with requested scopes
+- **Use**: This simulates what the Post-Login Action does at runtime
 
-**9. Attack Protection - Get Settings**
-- **Method**: `GET`
-- **URL**: `https://{{YOUR_AUTH0_DOMAIN}}/api/v2/attack-protection/suspicious-ip-throttling`
-- **Headers**: `Authorization: Bearer {{MANAGEMENT_API_TOKEN}}`
+#### Part 3: Testing My Account API Operations
 
-**10. Attack Protection - Update Settings**
-- **Method**: `PATCH`
-- **URL**: `https://{{YOUR_AUTH0_DOMAIN}}/api/v2/attack-protection/suspicious-ip-throttling`
-- **Headers**:
-  - `Content-Type: application/json`
-  - `Authorization: Bearer {{MANAGEMENT_API_TOKEN}}`
-- **Body**:
-  ```json
-  {
-    "stage": {
-      "pre-custom-token-exchange": {
-        "max_attempts": 10,
-        "rate": 600000
-      }
-    }
-  }
-  ```
+These requests simulate what the form does at runtime using the token from Custom Token Exchange.
 
-### My Account API Requests
+**9. List Authentication Methods**
+- **Endpoint**: `GET /me/v1/authentication-methods`
+- **Purpose**: Retrieve all passkeys for a user
+- **Required Scope**: `read:me:authentication_methods`
+- **Returns**: Array of authentication methods including passkey details
+- **Use**: Test that you can read the user's passkeys
 
-These requests test the complete passkey management functionality using tokens obtained from Custom Token Exchange.
+**10. Initiate Passkey Enrollment**
+- **Endpoint**: `POST /me/v1/authentication-methods`
+- **Purpose**: Start the passkey enrollment process
+- **Required Scope**: `create:me:authentication_methods`
+- **Body**: `{ "type": "passkey", "connection": "{{DATABASE_CONNECTION_NAME}}" }`
+- **Returns**: WebAuthn challenge and credential creation options
+- **Use**: Test that enrollment initiation works
 
-**11. List User's Authentication Methods**
+**11. Verify Passkey Enrollment**
+- **Endpoint**: `POST /me/v1/authentication-methods/passkey|new/verify`
+- **Purpose**: Complete passkey enrollment with WebAuthn attestation
+- **Required Scope**: `create:me:authentication_methods`
+- **Body**: WebAuthn attestation response (from browser's `navigator.credentials.create()`)
+- **Returns**: Confirmation of successful enrollment
+- **Note**: You need a real WebAuthn attestation from a browser to test this
 
-Retrieve all authentication methods (including passkeys) for the authenticated user.
+**12. Delete Authentication Method**
+- **Endpoint**: `DELETE /me/v1/authentication-methods/{{AUTHENTICATOR_ID}}`
+- **Purpose**: Remove a passkey from the user's account
+- **Required Scope**: `delete:me:authentication_methods`
+- **Returns**: 204 No Content on success
+- **Use**: Test that you can delete passkeys
 
-- **Method**: `GET`
-- **URL**: `https://{{YOUR_AUTH0_DOMAIN}}/me/v1/authentication-methods`
-- **Headers**:
-  - `Authorization: Bearer {{access_token}}`
+### Required Environment Variables
 
-> **Note**: The `access_token` must have the `read:me:authentication_methods` scope.
+Configure these variables in your Postman environment:
 
-**12. Initiate Passkey Enrollment**
+**Setup Variables:**
+- `YOUR_AUTH0_DOMAIN` - Your custom Auth0 domain (e.g., `auth.example.com`)
+- `MANAGEMENT_API_CLIENT_ID` - Client ID of your Management API application
+- `MANAGEMENT_API_CLIENT_SECRET` - Client secret of your Management API application
+- `CLIENT_ID` - Client ID of the application using Custom Token Exchange
+- `CLIENT_SECRET` - Client secret of the application using Custom Token Exchange
+- `ACTION_NAME` - Name of your Custom Token Exchange Action (to lookup ID)
 
-Simulate the custom component's call to get the WebAuthn challenge for enrolling a new passkey.
+**Runtime Variables:**
+- `DATABASE_CONNECTION_NAME` - Name of your database connection with passkeys enabled
+- `SUBJECT_TOKEN` - A test user ID for token exchange testing (e.g., `auth0|123456`)
 
-- **Method**: `POST`
-- **URL**: `https://{{YOUR_AUTH0_DOMAIN}}/me/v1/authentication-methods`
-- **Headers**:
-  - `Content-Type: application/json`
-  - `Authorization: Bearer {{access_token}}`
-- **Body** (raw JSON):
-  ```json
-  {
-    "type": "passkey",
-    "connection": "{{DATABASE_CONNECTION_NAME}}"
-  }
-  ```
+**Auto-Generated Variables** (saved by requests):
+- `MANAGEMENT_API_TOKEN` - Token for Management API calls (from request 1)
+- `ACTION_ID` - ID of your CTE Action (from request 3)
+- `PROFILE_ID` - ID of your token exchange profile (from request 4)
+- `access_token` - My Account API token (from request 8)
+- `AUTHENTICATOR_ID` - ID of a passkey to delete (from request 9)
 
-> **Note**: The `access_token` must have the `create:me:authentication_methods` scope.
+### Testing Workflow
 
-**13. Verify Passkey Enrollment**
+1. **Initial Setup** (one-time):
+   - Run requests 1-4 in order
+   - Save the `PROFILE_ID` from request 4
 
-Simulate the custom component's call to verify the passkey. You must get the attestationObject from a real WebAuthn ceremony first.
+2. **Verify CTE Works**:
+   - Run request 8 with a real user ID as `SUBJECT_TOKEN`
+   - Verify you receive an `access_token`
+   - Check the token includes all three scopes
 
-- **Method**: `POST`
-- **URL**: `https://{{YOUR_AUTH0_DOMAIN}}/me/v1/authentication-methods/passkey|new/verify`
-- **Headers**:
-  - `Content-Type: application/json`
-  - `Authorization: Bearer {{access_token}}`
-- **Body** (raw JSON):
-  ```json
-  {
-    "attestationObject": "BASE64_URL_ENCODED_ATTESTATION_OBJECT",
-    "clientDataJSON": "BASE64_URL_ENCODED_CLIENT_DATA",
-    "id": "BASE64_URL_ENCODED_CREDENTIAL_ID",
-    "rawId": "BASE64_URL_ENCODED_RAW_ID",
-    "type": "public-key"
-  }
-  ```
+3. **Test My Account API**:
+   - Run request 9 to list passkeys (should work even if empty)
+   - Run request 10 to initiate enrollment (will return WebAuthn challenge)
+   - Run request 12 to delete a passkey (need a real `AUTHENTICATOR_ID` from request 9)
 
-**14. Delete Passkey**
+4. **Troubleshooting**:
+   - Use request 5 to view your token exchange profiles
+   - Use request 7 to delete and recreate profiles if needed
 
-Remove a specific passkey from the user's account.
+## Complete Architecture Flow
 
-- **Method**: `DELETE`
-- **URL**: `https://{{YOUR_AUTH0_DOMAIN}}/me/v1/authentication-methods/{{AUTHENTICATOR_ID}}`
-- **Headers**:
-  - `Authorization: Bearer {{access_token}}`
+### Sequence Diagram: Full Token Exchange and Management Flow
 
-> **Note**: The `access_token` must have the `delete:me:authentication_methods` scope. The `AUTHENTICATOR_ID` can be obtained from the List request (request 11).
-
-### Environment Variables
-
-The collection requires these environment variables:
-
-- `YOUR_AUTH0_DOMAIN` - Your Auth0 tenant domain
-- `MANAGEMENT_API_CLIENT_ID` - Management API application client ID  
-- `MANAGEMENT_API_CLIENT_SECRET` - Management API application client secret
-- `CLIENT_ID` - Application client ID for token exchange
-- `CLIENT_SECRET` - Application client secret for token exchange
-- `API_IDENTIFIER` - Your API identifier/audience
-- `DATABASE_CONNECTION_NAME` - Database connection name with passkeys enabled
-- `ACTION_ID` - Custom Token Exchange Action ID
-- `PROFILE_ID` - Token Exchange Profile ID (after creation)
-
-## Sequence Diagram
-
-This diagram visualizes the complete flow, from login to passkey management:
+This diagram shows all components and their interactions from login through passkey management:
 
 ```mermaid
 sequenceDiagram
     participant User
     participant Browser
-    participant Auth0Login as Auth0 Login Flow
-    participant Auth0Actions as Auth0 Post-Login Action
+    participant Auth0
+    participant PostLoginAction as Post-Login Action
+    participant OAuthEndpoint as OAuth Token Endpoint
     participant CTEAction as Custom Token Exchange Action
-    participant MyAccountAPI as Auth0 My Account API
-    participant Auth0Forms as Passkey Management Form
+    participant ManagementForm as Passkey Management Form
+    participant MyAccountAPI as My Account API
 
-    User->>Auth0Login: Authenticates (e.g., username/password)
-    Auth0Login->>Auth0Actions: Executes Post-Login Action
-    Auth0Actions->>CTEAction: Performs Custom Token Exchange
-    CTEAction-->>Auth0Actions: Returns Access Token (with management scopes)
-    Auth0Actions->>Auth0Forms: Renders Form with Access Token
-    Auth0Forms->>MyAccountAPI: GET /me/v1/authentication-methods
-    MyAccountAPI-->>Auth0Forms: Returns list of existing passkeys
-    Auth0Forms-->>Browser: Displays passkey management interface
+    Note over User,MyAccountAPI: Initial Login & Setup
+    User->>Browser: Initiates login
+    Browser->>Auth0: Authentication request
+    Auth0->>User: Prompts for credentials
+    User->>Auth0: Provides credentials (username/password)
+    Auth0->>PostLoginAction: Triggers Post-Login Action
 
-    alt User enrolls new passkey
-        User->>Browser: Clicks "Enroll Passkey"
-        Browser->>MyAccountAPI: POST /me/v1/authentication-methods
-        MyAccountAPI-->>Browser: Returns WebAuthn challenge
-        Browser->>User: WebAuthn UI (biometric/PIN prompt)
-        User-->>Browser: Provides biometric/PIN
-        Browser->>MyAccountAPI: POST /verify (with attestationObject)
-        MyAccountAPI-->>Browser: Confirms enrollment success
-        Browser-->>User: Passkey successfully enrolled!
-    end
+    Note over PostLoginAction,CTEAction: Custom Token Exchange Process
+    PostLoginAction->>PostLoginAction: Check if protocol is token-exchange<br/>(prevent infinite loop)
+    PostLoginAction->>OAuthEndpoint: POST /oauth/token<br/>grant_type: token-exchange<br/>subject_token: user_id<br/>audience: My Account API<br/>scopes: read, create, delete
+    OAuthEndpoint->>CTEAction: Triggers Custom Token Exchange Action
+    CTEAction->>CTEAction: Validates request
+    CTEAction->>CTEAction: api.authentication.setUserById(subject_token)
+    CTEAction-->>OAuthEndpoint: Returns validated user context
+    OAuthEndpoint-->>PostLoginAction: Returns access_token with scopes
 
-    alt User deletes existing passkey
-        User->>Browser: Clicks "Delete" on passkey
-        Browser->>MyAccountAPI: DELETE /me/v1/authentication-methods/{id}
-        MyAccountAPI-->>Browser: Confirms deletion
-        Browser-->>User: Passkey successfully deleted!
+    Note over PostLoginAction,ManagementForm: Form Rendering with Token
+    PostLoginAction->>ManagementForm: api.prompt.render(FORM_ID, {<br/>vars: { api_token: access_token }<br/>})
+    ManagementForm->>ManagementForm: Decode JWT token<br/>Extract user info
+    ManagementForm->>MyAccountAPI: GET /me/v1/authentication-methods<br/>Authorization: Bearer {access_token}
+    MyAccountAPI-->>ManagementForm: Returns array of authentication methods
+    ManagementForm->>Browser: Renders UI with existing passkeys<br/>and management options
+    Browser-->>User: Displays passkey management interface
+
+    Note over User,MyAccountAPI: User Action: Enroll New Passkey
+    User->>Browser: Clicks "Enroll Passkey" button
+    Browser->>MyAccountAPI: POST /me/v1/authentication-methods<br/>{ type: "passkey", connection: "..." }<br/>Authorization: Bearer {access_token}
+    MyAccountAPI-->>Browser: Returns WebAuthn challenge:<br/>{ publicKey: { challenge, rp, user, ... } }
+    Browser->>Browser: Prepare WebAuthn options<br/>Convert base64url to ArrayBuffer
+    Browser->>Browser: navigator.credentials.create({<br/>publicKey: options<br/>})
+    Browser->>User: OS/Browser WebAuthn UI<br/>(biometric/PIN prompt)
+    User-->>Browser: Provides biometric/PIN authentication
+    Browser->>Browser: Creates attestationObject<br/>Convert ArrayBuffer to base64url
+    Browser->>MyAccountAPI: POST /me/v1/authentication-methods/passkey|new/verify<br/>{ attestationObject, clientDataJSON, ... }<br/>Authorization: Bearer {access_token}
+    MyAccountAPI->>MyAccountAPI: Validates WebAuthn attestation
+    MyAccountAPI-->>Browser: Confirms enrollment success
+    Browser->>MyAccountAPI: GET /me/v1/authentication-methods<br/>(refresh list)
+    MyAccountAPI-->>Browser: Returns updated passkey list
+    Browser-->>User: "Passkey successfully enrolled!"<br/>Updates UI with new passkey
+
+    Note over User,MyAccountAPI: User Action: Delete Existing Passkey
+    User->>Browser: Clicks "Delete" on a passkey
+    Browser->>Browser: (Optional) Confirmation dialog
+    Browser->>MyAccountAPI: DELETE /me/v1/authentication-methods/{authenticator_id}<br/>Authorization: Bearer {access_token}
+    MyAccountAPI->>MyAccountAPI: Removes passkey from user account
+    MyAccountAPI-->>Browser: Confirms deletion (204 No Content)
+    Browser->>MyAccountAPI: GET /me/v1/authentication-methods<br/>(refresh list)
+    MyAccountAPI-->>Browser: Returns updated passkey list
+    Browser-->>User: "Passkey successfully deleted!"<br/>Updates UI without deleted passkey
+
+    Note over User,Browser: User Completes Form
+    User->>Browser: Clicks "Continue" or form auto-proceeds
+    Browser->>Auth0: Form completion signal
+    Auth0-->>User: Completes login flow
+```
+
+### Optional: ACUL Custom Theme Flow
+
+This is a separate, optional enhancement for handling Auth0's Adaptive Continuous User Login prompts:
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Browser
+    participant Auth0
+    participant ACULTheme as Custom ACUL Theme
+    participant MyAccountAPI as My Account API
+
+    Note over User,MyAccountAPI: ACUL Enrollment Prompt Trigger
+    User->>Browser: Logs in to application
+    Auth0->>Auth0: Determines ACUL should prompt<br/>for passkey enrollment
+    Auth0->>ACULTheme: Loads custom theme
+    ACULTheme->>MyAccountAPI: GET /me/v1/authentication-methods<br/>(check existing passkeys)
+    MyAccountAPI-->>ACULTheme: Returns authentication methods
+
+    alt User has existing passkeys
+        ACULTheme->>ACULTheme: Detect passkeys already enrolled
+        ACULTheme->>Browser: Auto-skip enrollment prompt
+        Browser-->>User: Continue to application
+    else User has no passkeys
+        ACULTheme->>Browser: Display custom enrollment screen
+        Browser-->>User: Branded passkey enrollment UI
+        User->>User: Can choose to enroll or skip
     end
 ```
 
 ---
 
-## Files in This Repository
+## Troubleshooting
+
+### Common Issues and Solutions
+
+#### Issue: "Token exchange failed" in Post-Login Action logs
+
+**Possible Causes**:
+1. Token exchange profile not created or misconfigured
+2. CTE Action not deployed
+3. Wrong subject_token_type (must match profile)
+4. Application not enabled for CTE
+
+**Solutions**:
+- Run Postman requests 5 to verify profile exists
+- Check that `subject_token_type` in profile matches Action (`urn:cteforms`)
+- Verify CTE Action is deployed (not just saved)
+- Confirm application has `token_exchange.allow_any_profile_of_type: ["custom_authentication"]`
+
+#### Issue: Form displays "Token not found" or "Undefined token"
+
+**Possible Causes**:
+1. Post-Login Action not passing token to form
+2. Variable name mismatch
+3. Token exchange failed silently
+
+**Solutions**:
+- Check Post-Login Action logs for token exchange success
+- Verify Action uses: `api.prompt.render(FORM_ID, { vars: { api_token: token } })`
+- Verify Form accesses: `{{vars.api_token}}`
+- Add logging in Action to confirm token is received
+
+#### Issue: "403 Forbidden" when calling My Account API
+
+**Possible Causes**:
+1. Token missing required scopes
+2. Token expired
+3. Wrong audience in token
+
+**Solutions**:
+- Check token scopes in Post-Login Action logs
+- Verify token exchange requests all three scopes: `read:me:authentication_methods create:me:authentication_methods delete:me:authentication_methods`
+- Confirm audience is `https://YOUR_CUSTOM_DOMAIN/me/` (note the trailing slash)
+- Check token at jwt.io to verify scopes and audience
+
+#### Issue: "Invalid custom domain" errors
+
+**Possible Causes**:
+1. Using tenant URL instead of custom domain
+2. Custom domain not verified
+3. Hardcoded tenant URLs in form/action
+
+**Solutions**:
+- Verify custom domain is verified: **Settings > Custom Domains**
+- Update all URLs to use custom domain (Actions, form, Postman)
+- Search for `auth0.com` in Action code and replace with custom domain
+- Ensure `AUTH0_CUSTOM_DOMAIN` secret has NO `https://` prefix
+
+#### Issue: WebAuthn prompt never appears
+
+**Possible Causes**:
+1. Challenge request failed
+2. Browser doesn't support WebAuthn
+3. JavaScript error in form component
+
+**Solutions**:
+- Open browser DevTools (F12) → Console tab, look for errors
+- Check Network tab for `/me/v1/authentication-methods` POST request
+- Verify browser supports WebAuthn: check `window.PublicKeyCredential`
+- Test on different browser (Chrome, Safari, Edge all support WebAuthn)
+- Ensure page is served over HTTPS (WebAuthn requires secure context)
+
+#### Issue: Infinite loop / Action keeps running
+
+**Possible Causes**:
+1. Missing loop prevention check in Post-Login Action
+2. Token exchange triggering Post-Login flow again
+
+**Solutions**:
+- Verify Post-Login Action has: `if (event.transaction.protocol === "oauth2-token-exchange") return;`
+- This check should be at the very beginning of the Action
+- Check Action logs for repeated executions with same user ID
+
+#### Issue: "Action timeout" errors
+
+**Possible Causes**:
+1. Token exchange endpoint not responding
+2. Network issues
+3. Invalid custom domain configuration
+
+**Solutions**:
+- Test token exchange directly via Postman (Request 8)
+- Verify custom domain DNS is correctly configured
+- Check if tenant has rate limiting enabled
+- Reduce timeout in Action if needed (but fix root cause first)
+
+### Debugging Checklist
+
+When things aren't working, check these in order:
+
+- [ ] Custom domain is verified and active
+- [ ] Database connection has passkeys enabled
+- [ ] Application has My Account API scopes enabled
+- [ ] CTE Action is deployed (not just saved)
+- [ ] Token exchange profile is created (Postman Request 5)
+- [ ] Post-Login Action has correct secrets configured
+- [ ] Post-Login Action has loop prevention check
+- [ ] Post-Login Action has correct Form ID
+- [ ] Form is deployed (not just saved)
+- [ ] Application credentials match between Action secrets and Postman
+- [ ] All URLs use custom domain (no `tenant.auth0.com` references)
+- [ ] Token exchange test works in Postman (Request 8)
+
+### Viewing Logs
+
+**Action Logs**:
+- **Dashboard > Monitoring > Logs**
+- Filter by Action name
+- Look for `secte` (successful token exchange) or `fecte` (failed)
+
+**Action Executions**:
+- **Dashboard > Actions > Executions**
+- Shows real-time Action execution with details
+- Click execution to see full logs and context
+
+**Browser Console**:
+- Press **F12** → **Console** tab
+- See client-side JavaScript errors from form
+- Check **Network** tab for API call failures
+
+---
+
+## Repository Structure
 
 ### Auth0 Forms
-- `Auth0 Forms/passkey_manager_demo.json` - Complete passkey management form with embedded components
+```
+Auth0 Forms/
+└── passkey_manager_demo.json
+    Complete passkey management form with embedded components
+    - Token decoding logic
+    - Passkey listing UI
+    - WebAuthn enrollment flow
+    - Passkey deletion logic
+    - Error handling
+```
 
 ### Auth0 Actions
-- `Auth0 Actions/custom-token-exchange-basic-example.js` - Custom Token Exchange Action implementation
-- `Auth0 Actions/post-login-trigger-get-token-and-render-form.js` - Post-Login Action with token exchange and form rendering
+```
+Auth0 Actions/
+├── custom-token-exchange-basic-example.js
+│   CTE Action: Validates token exchange requests
+│   Trigger: Custom Token Exchange
+│   Purpose: Set user context for token
+│
+└── post-login-trigger-get-token-and-render-form.js
+    Post-Login Action: Gets token and renders form
+    Trigger: Login / Post Login
+    Purpose: Token acquisition and form delivery
+    Dependencies: axios
+    Secrets: CTE_CLIENT_ID, CTE_CLIENT_SECRET,
+             MY_ACCOUNT_API_AUDIENCE_CUSTOM_DOMAIN,
+             AUTH0_CUSTOM_DOMAIN
+```
 
 ### ACUL Enhancement (Optional)
-- `ACUL/passkey-enrollment-skip-example/passkey-enrollment-theme.js` - Custom ACUL theme (compiled React bundle)
-- `ACUL/passkey-enrollment-skip-example/passkey-enrollment-theme.css` - Custom ACUL theme styles
+```
+ACUL/passkey-enrollment-skip-example/
+├── passkey-enrollment-theme.js
+│   Compiled React bundle for custom ACUL screen
+│   Features: Smart skip logic for existing passkey users
+│
+└── passkey-enrollment-theme.css
+    Minified styles for ACUL theme
+```
 
 ### Testing & Resources
-- `Postman/passkey-forms-demo-collection.json` - Postman collection for Custom Token Exchange setup and My Account API testing
-- `Example/passkey-walkthrough-fast.gif` - Demo walkthrough animation
+```
+Postman/
+└── passkey-forms-demo-collection.json
+    Complete API test collection
+    - Management API setup (Requests 1-7)
+    - Token exchange testing (Request 8)
+    - My Account API testing (Requests 9-12)
+
+Example/
+└── passkey-walkthrough-fast.gif
+    Demo walkthrough animation
+```
 
 ---
 
 ## Additional Resources
 
+### Auth0 Documentation
 - [Auth0 Forms Documentation](https://auth0.com/docs/customize/forms)
 - [Auth0 Actions Documentation](https://auth0.com/docs/customize/actions)
 - [My Account API Documentation](https://auth0.com/docs/api/my-account)
 - [Custom Token Exchange Documentation](https://auth0.com/docs/authenticate/custom-token-exchange)
+
+### Web Standards
 - [WebAuthn Specification](https://www.w3.org/TR/webauthn-2/)
+- [Web Authentication API (MDN)](https://developer.mozilla.org/en-US/docs/Web/API/Web_Authentication_API)
+
+### Additional Learning
+- [Passkeys.dev](https://passkeys.dev/) - Comprehensive passkey resources
+- [WebAuthn.io](https://webauthn.io/) - Interactive WebAuthn demo
 
 ---
 
 ## Support
 
-For issues, questions, or contributions, please open an issue in this repository or contact Auth0 support.
+For issues, questions, or contributions:
+- **Issues**: Open an issue in this repository
+- **Auth0 Support**: Contact Auth0 support for tenant-specific questions
+- **Community**: [Auth0 Community](https://community.auth0.com/)
+
+---
+
+## License
+
+This sample code is provided as-is under the MIT License. See LICENSE file for details.
